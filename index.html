@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Consular — a visa form your agent fills in, you approve</title>
+    <meta name="description" content="A visa application where an AI agent drafts every answer and the applicant approves anything irreversible. Built on WebMCP." />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◆</span>
+        <div>
+          <strong>Consular</strong>
+          <span class="brand-sub">Schengen visa application · demo</span>
+        </div>
+      </div>
+      <div id="agent-status" class="agent-status" data-state="checking">
+        <span class="dot"></span><span class="label">checking for an agent…</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="form-pane">
+        <nav class="stepper" id="stepper" aria-label="Application steps"></nav>
+        <form id="application-form" class="card" autocomplete="off"></form>
+      </section>
+
+      <aside class="side-pane">
+        <section class="card proposal-card" id="proposal-card" hidden>
+          <h2>The agent suggests</h2>
+          <p class="proposal-note" id="proposal-note"></p>
+          <ul class="diff" id="proposal-diff"></ul>
+          <div class="proposal-actions">
+            <button type="button" class="btn btn-ghost" id="discard-proposal">Discard</button>
+            <button type="button" class="btn btn-primary" id="apply-proposal">Accept changes</button>
+          </div>
+        </section>
+
+        <section class="card paste-card">
+          <h2>Have it in a paragraph already?</h2>
+          <p class="muted">
+            Paste anything — an email from your employer, notes, an old application.
+            Ask your agent to read the box and fill the form from it.
+          </p>
+          <textarea id="raw-input" rows="5" placeholder="Maria Kovalenko, born 14 March 1991 in Lviv, Ukrainian passport FE882140 valid until August 2031. Travelling to Berlin for a conference from 12 to 19 October, staying at Hotel Adlon…"></textarea>
+          <p class="muted small" id="raw-hint"></p>
+        </section>
+
+        <section class="card activity-card">
+          <h2>Activity</h2>
+          <ul class="activity" id="activity"></ul>
+        </section>
+      </aside>
+    </main>
+
+    <div id="gate-root" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
