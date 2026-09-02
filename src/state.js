@@ -204,8 +204,12 @@ export const RULES = [
       const hotel = s.documents.find((d) => d.id === 'hotel');
       if (!hotel?.attached || !f.departureDate) return null;
       const checkout = '2026-10-18';
-      const hasSecondAddress = (f.usAddress || '').split(/\n|;/).map((x) => x.trim()).filter(Boolean).length > 1;
-      if (f.departureDate > checkout && !hasSecondAddress) return err(`Hotel confirmation ends ${checkout} but departure is ${f.departureDate}: the night of ${checkout} is unaccounted for. Extend the booking, or add the address for that night as a second line in 4.4.`);
+      // a second place to stay: a new line, a semicolon, or simply two street addresses
+      const addr = f.usAddress || '';
+      const parts = addr.split(/\n|;/).map((x) => x.trim()).filter(Boolean).length;
+      const streets = (addr.match(/\d{1,5}\s+[A-Za-z][A-Za-z.'\s]*?\b(St|Street|Ave|Avenue|Blvd|Boulevard|Rd|Road|Way|Dr|Drive|Pl|Place)\b/g) || []).length;
+      const hasSecondAddress = parts > 1 || streets > 1;
+      if (f.departureDate > checkout && !hasSecondAddress) return err(`Hotel confirmation ends ${checkout} but departure is ${f.departureDate}: the night of ${checkout} is unaccounted for. Extend the booking, or add the address for that night to 4.4 alongside the hotel.`);
       return null;
     }
   },
