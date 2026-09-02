@@ -106,7 +106,9 @@ const TOOLS = [
     execute: (raw) => {
       const { changes, sources, note } = readArgs(raw);
       if (!changes || typeof changes !== 'object') return text('No changes supplied.');
-      const { staged, refused } = proposeChanges(changes, { note, sources: sources || {} });
+      let staged, refused;
+      try { ({ staged, refused } = proposeChanges(changes, { note, sources: sources || {} })); }
+      catch (error) { return text({ refused: true, reason: error.message }); }
       if (staged.length) logActivity('agent', `Proposed ${staged.length} change(s)`);
       return text({
         staged: staged.length,

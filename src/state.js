@@ -283,6 +283,9 @@ export function goToScreen(id) {
 
 /** Stage changes. Returns { staged, refused } — humanOnly fields are refused. */
 export function proposeChanges(updates, { note, sources = {} } = {}) {
+  if (state.submission) {
+    throw new Error(`The application was filed as ${state.submission.reference} and can no longer be edited.`);
+  }
   const staged = [], refused = [];
   for (const [field, to] of Object.entries(updates)) {
     const spec = FIELDS[field];
