@@ -145,8 +145,11 @@ function renderDocs(state) {
   const attachable = state.documents.filter((d) => !d.editable);
   $('docs-count').textContent = `${attachable.filter((d) => d.attached).length} of ${attachable.length} attached`;
   if (document.activeElement?.dataset?.notes) return; // don't re-render under the caret
-  $('docs-list').innerHTML = state.documents.map((d) => `<li class="doc${d.attached ? ' attached' : ''}${d.editable ? ' editable' : ''}">
-    <details${d.editable ? ' open' : ''}><summary><span class="doc-kind">${esc(d.kind)}</span><span class="doc-att">${d.attached ? 'attached' : ''}</span></summary>
+  $('docs-list').innerHTML = state.documents.map((d, i) => `<li class="doc${d.attached ? ' attached' : ''}${d.editable ? ' editable' : ''}">
+    <details${d.editable || i === 0 ? ' open' : ''}><summary>
+      <span class="doc-kind">${esc(d.kind)}</span>
+      <span class="doc-preview">${esc(d.text.split('\n')[0].slice(0, 48))}${d.text.length > 48 ? '…' : ''}</span>
+      <span class="doc-att">${d.attached ? 'attached' : ''}</span></summary>
     ${d.editable ? `<textarea data-notes="${d.id}" rows="5">${esc(d.text)}</textarea>` : `<pre>${esc(d.text)}</pre>`}</details>
   </li>`).join('');
 }
