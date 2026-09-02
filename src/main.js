@@ -1,202 +1,198 @@
 import './style.css';
 import {
-  subscribe, getState, fieldSpec, steps, setField, goToStep,
-  applyProposal, discardProposal, logActivity
+  subscribe, getState, FIELDS, SCREENS, VISA_CATEGORIES, MRV_FEE_USD,
+  setField, goToScreen, applyProposal, discardProposal, attachDocument, setDocumentText, logActivity, runRules, missingRequired
 } from './state.js';
-import { registerTools, isWebMcpAvailable, toolNames } from './agent/tools.js';
+import { registerTools, isWebMcpAvailable, ACTION_POLICY } from './agent/tools.js';
 
-const form = document.getElementById('application-form');
-const stepper = document.getElementById('stepper');
-const proposalCard = document.getElementById('proposal-card');
-const proposalDiff = document.getElementById('proposal-diff');
-const proposalNote = document.getElementById('proposal-note');
-const activityList = document.getElementById('activity');
-const statusEl = document.getElementById('agent-status');
+const $ = (id) => document.getElementById(id);
+const form = $('application-form');
+const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
-function fieldControl(name, spec, value) {
-  const id = `f-${name}`;
+// ── field controls ──────────────────────────────────────────────────
+function control(name, spec, value, proposed) {
+  const id = `f-${name}`, cls = proposed ? ' proposed' : '';
   if (spec.type === 'enum') {
-    return `<select id="${id}" name="${name}" data-field="${name}">
-      <option value="">—</option>
-      ${spec.options.map((o) => `<option value="${o}"${o === value ? ' selected' : ''}>${o}</option>`).join('')}
-    </select>`;
+    return `<select id="${id}" data-field="${name}" class="ctl${cls}"><option value="">Select…</option>${spec.options
+      .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   }
-  if (spec.type === 'text') {
-    return `<textarea id="${id}" name="${name}" data-field="${name}" rows="2">${escapeHtml(value)}</textarea>`;
+  if (spec.type === 'yesno') {
+    return `<div class="yesno${cls}" role="radiogroup">${['Yes', 'No'].map((o) =>
+      `<label><input type="radio" name="${name}" value="${o}" data-field="${name}"${value === o ? ' checked' : ''}> ${o}</label>`).join('')}</div>`;
   }
-  const type = spec.type === 'number' ? 'number' : spec.type === 'date' ? 'date' : spec.type === 'email' ? 'email' : 'text';
-  return `<input id="${id}" name="${name}" data-field="${name}" type="${type}" value="${escapeHtml(value)}" />`;
+  if (spec.type === 'text') return `<textarea id="${id}" data-field="${name}" rows="2" class="ctl${cls}">${esc(value)}</textarea>`;
+  const type = { number: 'number', date: 'date', email: 'email' }[spec.type] || 'text';
+  return `<input id="${id}" data-field="${name}" type="${type}" value="${esc(value)}" class="ctl${cls}" />`;
 }
 
-function escapeHtml(v) {
-  return String(v ?? '').replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
-  );
+function fieldRow(name, spec, state) {
+  const proposed = (state.proposal?.changes || []).some((c) => c.field === name);
+  return `<div class="row${spec.humanOnly ? ' human-only' : ''}${proposed ? ' has-proposal' : ''}">
+    <label class="row-label" for="f-${name}">
+      <span class="row-n">${spec.n}</span>
+      <span class="row-text">${esc(spec.label)}${spec.optional ? ' <em>(optional)</em>' : ''}</span>
+      ${spec.humanOnly ? '<span class="row-flag">answer personally</span>' : ''}
+      ${spec.hint ? `<span class="row-hint">${esc(spec.hint)}</span>` : ''}
+    </label>
+    <div class="row-ctl">${control(name, spec, state.fields[name], proposed)}</div>
+  </div>`;
 }
 
-function nextStep(current) {
-  const i = steps.findIndex((s) => s.id === current);
-  return steps[Math.min(i + 1, steps.length - 1)].id;
+// ── screens ─────────────────────────────────────────────────────────
+function screenHeader(screen, sub) {
+  return `<header class="sheet-head"><p class="sheet-part">Part ${screen.part} of ${SCREENS.length}</p><h2>${esc(screen.title)}</h2>${sub ? `<p class="sheet-sub">${sub}</p>` : ''}</header>`;
 }
 
-function prevStep(current) {
-  const i = steps.findIndex((s) => s.id === current);
-  return i > 0 ? steps[i - 1].id : null;
+function renderCategory(state, screen) {
+  const chosen = state.fields.visaCategory;
+  const proposed = (state.proposal?.changes || []).find((c) => c.field === 'visaCategory')?.to;
+  return `${screenHeader(screen, 'Choose the category that matches the purpose of your trip. Getting this wrong is the most common reason an application is returned. Unsure? Describe your trip to your agent.')}
+    <div class="cats">${VISA_CATEGORIES.map((c) => `
+      <label class="cat${chosen === c.code ? ' chosen' : ''}${proposed === c.code ? ' proposed' : ''}">
+        <input type="radio" name="visaCategory" value="${c.code}" data-field="visaCategory"${chosen === c.code ? ' checked' : ''}>
+        <span class="cat-code">${c.code}</span>
+        <span class="cat-name">${esc(c.name)}</span>
+        <span class="cat-sum">${esc(c.summary)}</span>
+        ${c.prerequisite ? `<span class="cat-req">Requires ${esc(c.prerequisite)}</span>` : ''}
+      </label>`).join('')}
+    </div>
+    <div class="rows">${fieldRow('petitionNumber', FIELDS.petitionNumber, state)}</div>`;
 }
 
-function renderStepper(state) {
-  stepper.innerHTML = steps
-    .map((s) => {
-      const done = Object.entries(fieldSpec)
-        .filter(([, spec]) => spec.step === s.id)
-        .every(([n]) => String(state.fields[n] || '').trim());
-      const cls = [s.id === state.step ? 'active' : '', done && s.id !== 'review' ? 'done' : ''].filter(Boolean).join(' ');
-      return `<button type="button" class="step ${cls}" data-step="${s.id}">
-        <span class="step-dot"></span>${s.title}</button>`;
-    })
-    .join('');
+function renderDocuments(state, screen) {
+  return `${screenHeader(screen, 'Attach the documents that support this application. Your agent can read them and attach the right ones.')}
+    <ul class="doc-attach">${state.documents.map((d) => `
+      <li class="${d.attached ? 'on' : ''}">
+        <label><input type="checkbox" data-doc="${d.id}"${d.attached ? ' checked' : ''}> <strong>${esc(d.kind)}</strong></label>
+        <span class="doc-state">${d.attached ? 'attached' : 'not attached'}</span>
+      </li>`).join('')}
+    </ul>`;
 }
 
-function renderReview(state) {
-  const grouped = steps
-    .filter((s) => s.id !== 'review')
-    .map((s) => {
-      const rows = Object.entries(fieldSpec)
-        .filter(([, spec]) => spec.step === s.id)
-        .map(([name, spec]) => {
-          const v = state.fields[name];
-          return `<div class="review-row${v ? '' : ' empty'}">
-            <dt>${spec.label}</dt><dd>${v ? escapeHtml(v) : 'not filled in'}</dd></div>`;
-        })
-        .join('');
-      return `<section class="review-group"><h3>${s.title}</h3><dl>${rows}</dl></section>`;
-    })
-    .join('');
-
-  const slot = state.interviewSlot;
-  const submitted = state.submission;
-
-  return `
-    <h1>Review &amp; submit</h1>
-    <p class="muted">Nothing here is sent until you approve it.</p>
-    ${grouped}
-    <section class="review-group">
-      <h3>Interview</h3>
-      <p>${slot ? `${slot.date} at ${slot.time} — ${slot.location}` : 'No slot booked yet.'}</p>
+function renderReview(state, screen) {
+  const problems = runRules(), missing = missingRequired();
+  const groups = SCREENS.filter((s) => !['review', 'documents', 'category'].includes(s.id)).map((s) => `
+    <section class="rev-group"><h3>Part ${s.part} · ${esc(s.title)}</h3><dl>${Object.entries(FIELDS).filter(([, sp]) => sp.screen === s.id).map(([n, sp]) => {
+      const v = state.fields[n];
+      return `<div class="rev-row${v ? '' : (sp.optional ? ' opt' : ' empty')}"><dt>${sp.n} ${esc(sp.label)}</dt><dd>${v ? esc(v) : (sp.optional ? '—' : 'not answered')}</dd></div>`;
+    }).join('')}</dl></section>`).join('');
+  const cat = VISA_CATEGORIES.find((c) => c.code === state.fields.visaCategory);
+  return `${screenHeader(screen, 'Nothing below is sent until you approve it in a dialog.')}
+    <section class="rev-group"><h3>Part 1 · Visa category</h3><p class="rev-cat">${cat ? `<strong>${cat.code}</strong> ${esc(cat.name)}` : '<span class="empty">not chosen</span>'}</p></section>
+    ${groups}
+    <section class="rev-checks">
+      <h3>Consular checks</h3>
+      ${problems.length === 0 && missing.length === 0
+        ? '<p class="check ok">All checks pass.</p>'
+        : `<ul class="checks">${problems.map((p) => `<li class="check ${p.severity === 'error' ? 'bad' : 'warn'}"><strong>${esc(p.id)} ${esc(p.title)}${p.severity === 'warning' ? ' · advisory' : ''}</strong><span>${esc(p.finding)}</span></li>`).join('')}
+           ${missing.length ? `<li class="check warn"><strong>Required fields empty</strong><span>${missing.map((m) => m.n).join(', ')}</span></li>` : ''}</ul>`}
     </section>
-    ${submitted
-      ? `<div class="submitted-banner"><strong>Filed.</strong> Reference ${submitted.reference}</div>`
-      : `<p class="muted small">Ask your agent to book an interview or file the application — it will ask you before doing either.</p>`}
-  `;
+    <section class="rev-final">
+      <div class="final-item${state.fee ? ' done' : ''}"><span class="final-k">Application fee</span><span class="final-v">${state.fee ? `Paid · ${state.fee.reference}` : `US$${MRV_FEE_USD} · not paid`}</span></div>
+      <div class="final-item${state.interview ? ' done' : ''}"><span class="final-k">Interview</span><span class="final-v">${state.interview ? `${state.interview.date} ${state.interview.time} · ${esc(state.interview.location)}` : 'not scheduled'}</span></div>
+      <div class="final-item${state.submission ? ' done' : ''}"><span class="final-k">Submission</span><span class="final-v">${state.submission ? `Filed · ${state.submission.reference}` : 'not filed'}</span></div>
+    </section>
+    ${state.submission ? '' : '<p class="muted small">Paying, scheduling and filing are done by your agent on your instruction — each one opens a confirmation you must approve.</p>'}`;
 }
 
 function renderForm(state) {
-  if (state.step === 'review') {
-    form.innerHTML = renderReview(state);
-    return;
+  const screen = SCREENS.find((s) => s.id === state.screen);
+  let body;
+  if (screen.id === 'category') body = renderCategory(state, screen);
+  else if (screen.id === 'documents') body = renderDocuments(state, screen);
+  else if (screen.id === 'review') body = renderReview(state, screen);
+  else {
+    const sub = screen.id === 'security'
+      ? 'These are legal declarations. Your agent can explain each question but will not answer them for you.'
+      : screen.id === 'personal' ? 'Names must be written exactly as they appear in the machine-readable zone of your passport.' : '';
+    body = `${screenHeader(screen, sub)}<div class="rows">${Object.entries(FIELDS).filter(([, sp]) => sp.screen === screen.id).map(([n, sp]) => fieldRow(n, sp, state)).join('')}</div>`;
   }
-  const step = steps.find((s) => s.id === state.step);
-  const fields = Object.entries(fieldSpec).filter(([, spec]) => spec.step === state.step);
-  const pending = new Set((state.proposal?.changes || []).map((c) => c.field));
+  const i = SCREENS.findIndex((s) => s.id === screen.id);
+  const prev = SCREENS[i - 1], next = SCREENS[i + 1];
+  form.innerHTML = `${body}<footer class="sheet-nav">
+    ${prev ? `<button type="button" class="btn btn-ghost" data-nav="${prev.id}">‹ Part ${prev.part}</button>` : '<span></span>'}
+    ${next ? `<button type="button" class="btn btn-primary" data-nav="${next.id}">Part ${next.part}: ${esc(next.title)} ›</button>` : ''}
+  </footer>`;
+}
 
-  form.innerHTML = `
-    <h1>${step.title}</h1>
-    <p class="muted">Type it yourself, or let the agent draft it and accept what it suggests.</p>
-    <div class="grid">
-      ${fields
-        .map(
-          ([name, spec]) => `
-        <label class="field${pending.has(name) ? ' proposed' : ''}">
-          <span class="field-label">${spec.label}${pending.has(name) ? '<i class="pending-dot" title="the agent suggests a value"></i>' : ''}</span>
-          ${fieldControl(name, spec, state.fields[name])}
-        </label>`
-        )
-        .join('')}
-    </div>
-    <div class="step-nav">
-      ${prevStep(state.step) ? `<button type="button" class="btn btn-ghost" data-nav="${prevStep(state.step)}">Back</button>` : '<span></span>'}
-      <button type="button" class="btn btn-primary" data-nav="${nextStep(state.step)}">
-        ${nextStep(state.step) === 'review' ? 'Review' : 'Continue'}
-      </button>
-    </div>`;
+function renderParts(state) {
+  $('parts').innerHTML = SCREENS.map((s) => {
+    const fields = Object.entries(FIELDS).filter(([, sp]) => sp.screen === s.id && !sp.optional);
+    const done = fields.length > 0 && fields.every(([n]) => String(state.fields[n] || '').trim());
+    return `<button type="button" class="part${s.id === state.screen ? ' active' : ''}${done ? ' done' : ''}" data-screen="${s.id}" title="${esc(s.title)}">
+      <span class="part-n">${s.part}</span><span class="part-t">${esc(s.title)}</span></button>`;
+  }).join('');
 }
 
 function renderProposal(state) {
-  const proposal = state.proposal;
-  proposalCard.hidden = !proposal;
-  if (!proposal) return;
-  proposalNote.textContent = proposal.note || 'Review these before they go into the form.';
-  proposalDiff.innerHTML = proposal.changes
-    .map(
-      (c) => `<li>
-        <span class="diff-field">${fieldSpec[c.field].label}</span>
-        <span class="diff-from">${c.from ? escapeHtml(c.from) : 'empty'}</span>
-        <span class="diff-arrow">→</span>
-        <span class="diff-to">${escapeHtml(c.to)}</span>
-      </li>`
-    )
-    .join('');
+  const p = state.proposal;
+  $('proposal-card').hidden = !p;
+  if (!p) return;
+  $('proposal-note').textContent = p.note || 'Review before these are written into the form.';
+  $('proposal-diff').innerHTML = p.changes.map((c) => `<li>
+    <span class="d-field">${FIELDS[c.field].n} ${esc(FIELDS[c.field].label)}</span>
+    <span class="d-vals"><s>${c.from ? esc(c.from) : 'empty'}</s> <b>${esc(c.to)}</b></span>
+    ${c.source ? `<span class="d-src">from ${esc(c.source)}</span>` : ''}
+  </li>`).join('');
+}
+
+function renderPolicy() {
+  $('policy-list').innerHTML = ACTION_POLICY.consequential.map((c) => `<li><code>${esc(c.tool)}</code><span>${esc(c.why)}</span></li>`).join('')
+    + `<li class="policy-human"><code>Part 7</code><span>${esc(ACTION_POLICY.humanOnly.why)}</span></li>`;
+}
+
+function renderDocs(state) {
+  const attachable = state.documents.filter((d) => !d.editable);
+  $('docs-count').textContent = `${attachable.filter((d) => d.attached).length} of ${attachable.length} attached`;
+  if (document.activeElement?.dataset?.notes) return; // don't re-render under the caret
+  $('docs-list').innerHTML = state.documents.map((d) => `<li class="doc${d.attached ? ' attached' : ''}${d.editable ? ' editable' : ''}">
+    <details${d.editable ? ' open' : ''}><summary><span class="doc-kind">${esc(d.kind)}</span><span class="doc-att">${d.attached ? 'attached' : ''}</span></summary>
+    ${d.editable ? `<textarea data-notes="${d.id}" rows="5">${esc(d.text)}</textarea>` : `<pre>${esc(d.text)}</pre>`}</details>
+  </li>`).join('');
 }
 
 function renderActivity(state) {
-  activityList.innerHTML = state.activity.length
-    ? state.activity.map((a) => `<li class="act act-${a.kind}"><span>${escapeHtml(a.text)}</span><time>${a.at}</time></li>`).join('')
+  $('activity').innerHTML = state.activity.length
+    ? state.activity.map((a) => `<li class="act act-${a.kind}"><span>${esc(a.text)}</span><time>${a.at}</time></li>`).join('')
     : '<li class="muted small">Nothing yet.</li>';
 }
 
-subscribe((state) => {
-  renderStepper(state);
-  renderForm(state);
-  renderProposal(state);
-  renderActivity(state);
-});
+subscribe((state) => { renderParts(state); renderForm(state); renderProposal(state); renderDocs(state); renderActivity(state); });
+renderPolicy();
 
-stepper.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-step]');
-  if (btn) goToStep(btn.dataset.step);
-});
-
-form.addEventListener('click', (e) => {
-  const nav = e.target.closest('[data-nav]');
-  if (nav) goToStep(nav.dataset.nav);
-});
-
+// ── events ──────────────────────────────────────────────────────────
+$('parts').addEventListener('click', (e) => { const b = e.target.closest('[data-screen]'); if (b) goToScreen(b.dataset.screen); });
+form.addEventListener('click', (e) => { const b = e.target.closest('[data-nav]'); if (b) goToScreen(b.dataset.nav); });
 form.addEventListener('input', (e) => {
-  const field = e.target.dataset?.field;
-  if (field) setField(field, e.target.value, { silent: true });
+  const t = e.target;
+  if (t.dataset?.field) {
+    // never re-render the sheet from its own input event — that would detach
+    // the control under the user's hand. Native controls already show their
+    // state; only the category cards and the parts strip need a nudge.
+    setField(t.dataset.field, t.value, { silent: true });
+    if (t.dataset.field === 'visaCategory') {
+      form.querySelectorAll('.cat').forEach((c) => c.classList.toggle('chosen', c.querySelector('input').value === t.value));
+    }
+    renderParts(getState());
+  }
+  if (t.dataset?.doc) attachDocument(t.dataset.doc, t.checked);
 });
+$('docs-list').addEventListener('input', (e) => { if (e.target.dataset?.notes) setDocumentText(e.target.dataset.notes, e.target.value); });
+$('apply-proposal').onclick = () => logActivity('applied', `Accepted ${applyProposal()} change(s) into the form`);
+$('discard-proposal').onclick = () => logActivity('discarded', `Discarded ${discardProposal()} suggestion(s)`);
 
-document.getElementById('apply-proposal').onclick = () => {
-  const n = applyProposal();
-  logActivity('applied', `Accepted ${n} change(s)`);
-};
-document.getElementById('discard-proposal').onclick = () => {
-  const n = discardProposal();
-  logActivity('discarded', `Discarded ${n} suggestion(s)`);
-};
-
-// ── Agent status ────────────────────────────────────────────────────
-async function initAgent() {
-  const label = statusEl.querySelector('.label');
+// ── agent ───────────────────────────────────────────────────────────
+(async () => {
+  const el = $('agent-status'), label = el.querySelector('.label');
   if (!isWebMcpAvailable()) {
-    statusEl.dataset.state = 'unavailable';
-    label.textContent = 'no WebMCP in this browser';
-    statusEl.title =
-      'Open in ChatGPT’s in-app browser, or Chrome with chrome://flags/#enable-webmcp-testing enabled.';
-    document.getElementById('raw-hint').textContent =
-      'This browser has no WebMCP, so the form works as an ordinary form. Open it in an agent browser to hand the typing over.';
+    el.dataset.state = 'unavailable';
+    label.textContent = 'no agent in this browser — form works manually';
+    el.title = 'Open in ChatGPT’s browser, or Chrome with chrome://flags/#enable-webmcp-testing.';
     return;
   }
-  const { registered, dangerous } = await registerTools();
-  statusEl.dataset.state = 'ready';
-  label.textContent = `${registered.length} tools offered to your agent`;
-  statusEl.title = `${registered.join(', ')}\nApproval required: ${dangerous.join(', ')}`;
-  document.getElementById('raw-hint').textContent =
-    'Your agent can read this box. Try: “read the notes on the page and fill in the application”.';
-  logActivity('ready', `Published ${registered.length} tools (${dangerous.length} need approval)`);
-}
-
-initAgent();
-
-// Exposed so a tool can read what the applicant pasted.
-window.__consularRawInput = () => document.getElementById('raw-input').value;
+  const { registered, gated } = await registerTools();
+  el.dataset.state = 'ready';
+  label.textContent = `${registered.length} tools offered · ${gated.length} need your approval`;
+  el.title = registered.join('\n');
+  logActivity('ready', `Offered ${registered.length} tools to your agent; ${gated.length} will ask you first`);
+})();

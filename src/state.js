@@ -1,71 +1,266 @@
-// Application state. The agent never mutates fields directly: it stages a
-// proposal, the human sees exactly what would change, and only then applies.
+// Application state for a nonimmigrant visa application modelled on the
+// U.S. DS-160 (demo — not affiliated with any government).
+//
+// The agent never writes a field directly: it stages a proposal, the applicant
+// sees before/after with provenance, and applies it. Some answers are
+// human-only and cannot be proposed at all.
 
-const STEPS = [
-  { id: 'applicant', title: 'Applicant' },
-  { id: 'passport', title: 'Passport' },
-  { id: 'travel', title: 'Travel' },
-  { id: 'employment', title: 'Employment' },
-  { id: 'review', title: 'Review & submit' }
+export const VISA_CATEGORIES = [
+  {
+    code: 'B-1', name: 'Business visitor',
+    summary: 'Consulting with business associates, attending a conference or convention, negotiating a contract. No employment in the U.S.',
+    petition: false
+  },
+  {
+    code: 'B-2', name: 'Tourism, visiting, medical treatment',
+    summary: 'Vacation, visiting friends or relatives, medical treatment, amateur events with no payment.',
+    petition: false
+  },
+  {
+    code: 'F-1', name: 'Academic student',
+    summary: 'Full-time study at an accredited college, university, seminary or language program. Requires Form I-20 from the school.',
+    petition: false, prerequisite: 'Form I-20 (SEVIS ID)'
+  },
+  {
+    code: 'J-1', name: 'Exchange visitor',
+    summary: 'Approved exchange programs: scholars, interns, trainees, au pairs, camp counselors. Requires Form DS-2019 from the sponsor.',
+    petition: false, prerequisite: 'Form DS-2019'
+  },
+  {
+    code: 'H-1B', name: 'Specialty occupation',
+    summary: 'Working in a field that requires specialised knowledge, for a U.S. employer who has an approved petition on your behalf.',
+    petition: true, prerequisite: 'Approved Form I-129 petition (receipt number)'
+  },
+  {
+    code: 'L-1', name: 'Intracompany transferee',
+    summary: 'Transferring within the same company to a U.S. office as a manager, executive or specialised-knowledge employee.',
+    petition: true, prerequisite: 'Approved Form I-129 petition (receipt number)'
+  },
+  {
+    code: 'O-1', name: 'Extraordinary ability',
+    summary: 'Sustained national or international acclaim in sciences, arts, education, business or athletics.',
+    petition: true, prerequisite: 'Approved Form I-129 petition (receipt number)'
+  }
 ];
 
-const FIELDS = {
-  givenName: { step: 'applicant', label: 'Given name', type: 'string' },
-  familyName: { step: 'applicant', label: 'Family name', type: 'string' },
-  dateOfBirth: { step: 'applicant', label: 'Date of birth', type: 'date' },
-  nationality: { step: 'applicant', label: 'Nationality', type: 'string' },
-  email: { step: 'applicant', label: 'Email', type: 'email' },
-  phone: { step: 'applicant', label: 'Phone', type: 'string' },
-  passportNumber: { step: 'passport', label: 'Passport number', type: 'string' },
-  passportIssued: { step: 'passport', label: 'Issue date', type: 'date' },
-  passportExpires: { step: 'passport', label: 'Expiry date', type: 'date' },
-  passportCountry: { step: 'passport', label: 'Issuing country', type: 'string' },
-  purpose: {
-    step: 'travel',
-    label: 'Purpose of travel',
-    type: 'enum',
-    options: ['Tourism', 'Business', 'Study', 'Family visit', 'Conference']
-  },
-  arrivalDate: { step: 'travel', label: 'Intended arrival', type: 'date' },
-  departureDate: { step: 'travel', label: 'Intended departure', type: 'date' },
-  accommodation: { step: 'travel', label: 'Accommodation address', type: 'text' },
-  employer: { step: 'employment', label: 'Employer', type: 'string' },
-  jobTitle: { step: 'employment', label: 'Job title', type: 'string' },
-  monthlyIncome: { step: 'employment', label: 'Monthly income (EUR)', type: 'number' },
-  employerAddress: { step: 'employment', label: 'Employer address', type: 'text' }
+export const SCREENS = [
+  { id: 'category', title: 'Visa category', part: 1 },
+  { id: 'personal', title: 'Personal information', part: 2 },
+  { id: 'passport', title: 'Passport', part: 3 },
+  { id: 'travel', title: 'Travel', part: 4 },
+  { id: 'contact', title: 'U.S. point of contact', part: 5 },
+  { id: 'work', title: 'Work and education', part: 6 },
+  { id: 'security', title: 'Security and background', part: 7 },
+  { id: 'documents', title: 'Supporting documents', part: 8 },
+  { id: 'review', title: 'Review, fee and submission', part: 9 }
+];
+
+// type: string | text | date | number | enum | yesno
+// humanOnly: the agent may read but never propose this field
+export const FIELDS = {
+  visaCategory: { screen: 'category', n: '1.1', label: 'Visa category', type: 'enum', options: VISA_CATEGORIES.map((c) => c.code) },
+  petitionNumber: { screen: 'category', n: '1.2', label: 'Petition receipt number', type: 'string', hint: 'Only for H-1B, L-1, O-1', optional: true },
+
+  surname: { screen: 'personal', n: '2.1', label: 'Surname (as in passport)', type: 'string' },
+  givenNames: { screen: 'personal', n: '2.2', label: 'Given names (as in passport)', type: 'string' },
+  otherNames: { screen: 'personal', n: '2.3', label: 'Other names used', type: 'string', optional: true },
+  sex: { screen: 'personal', n: '2.4', label: 'Sex', type: 'enum', options: ['Female', 'Male'] },
+  maritalStatus: { screen: 'personal', n: '2.5', label: 'Marital status', type: 'enum', options: ['Single', 'Married', 'Divorced', 'Widowed', 'Separated'] },
+  dateOfBirth: { screen: 'personal', n: '2.6', label: 'Date of birth', type: 'date' },
+  birthCity: { screen: 'personal', n: '2.7', label: 'City of birth', type: 'string' },
+  birthCountry: { screen: 'personal', n: '2.8', label: 'Country of birth', type: 'string' },
+  nationality: { screen: 'personal', n: '2.9', label: 'Nationality', type: 'string' },
+  nationalId: { screen: 'personal', n: '2.10', label: 'National identification number', type: 'string', optional: true },
+  email: { screen: 'personal', n: '2.11', label: 'Email address', type: 'email' },
+  phone: { screen: 'personal', n: '2.12', label: 'Primary phone', type: 'string' },
+  homeAddress: { screen: 'personal', n: '2.13', label: 'Home address', type: 'text' },
+
+  passportNumber: { screen: 'passport', n: '3.1', label: 'Passport number', type: 'string' },
+  passportCountry: { screen: 'passport', n: '3.2', label: 'Issuing country', type: 'string' },
+  passportIssueCity: { screen: 'passport', n: '3.3', label: 'City of issue', type: 'string' },
+  passportIssued: { screen: 'passport', n: '3.4', label: 'Issue date', type: 'date' },
+  passportExpires: { screen: 'passport', n: '3.5', label: 'Expiry date', type: 'date' },
+  passportLost: { screen: 'passport', n: '3.6', label: 'Ever lost or had a passport stolen?', type: 'yesno' },
+
+  purpose: { screen: 'travel', n: '4.1', label: 'Specific purpose of trip', type: 'text' },
+  arrivalDate: { screen: 'travel', n: '4.2', label: 'Intended date of arrival', type: 'date' },
+  departureDate: { screen: 'travel', n: '4.3', label: 'Intended date of departure', type: 'date' },
+  usAddress: { screen: 'travel', n: '4.4', label: 'Address where you will stay in the U.S.', type: 'text' },
+  tripPayer: { screen: 'travel', n: '4.5', label: 'Who is paying for your trip?', type: 'enum', options: ['Self', 'Employer', 'Other person', 'Other company/organisation'] },
+  travelledBefore: { screen: 'travel', n: '4.6', label: 'Have you ever been to the U.S.?', type: 'yesno' },
+
+  contactName: { screen: 'contact', n: '5.1', label: 'Contact person or organisation', type: 'string' },
+  contactRelationship: { screen: 'contact', n: '5.2', label: 'Relationship to you', type: 'enum', options: ['Business associate', 'Employer', 'Relative', 'Friend', 'School', 'Other'] },
+  contactAddress: { screen: 'contact', n: '5.3', label: 'Contact address', type: 'text' },
+  contactPhone: { screen: 'contact', n: '5.4', label: 'Contact phone', type: 'string', optional: true },
+
+  occupation: { screen: 'work', n: '6.1', label: 'Primary occupation', type: 'string' },
+  employer: { screen: 'work', n: '6.2', label: 'Present employer or school', type: 'string' },
+  employerAddress: { screen: 'work', n: '6.3', label: 'Employer address', type: 'text' },
+  employedSince: { screen: 'work', n: '6.4', label: 'Start date', type: 'date' },
+  monthlyIncome: { screen: 'work', n: '6.5', label: 'Monthly income (local currency)', type: 'number' },
+  duties: { screen: 'work', n: '6.6', label: 'Briefly describe your duties', type: 'text' },
+
+  secDisease: { screen: 'security', n: '7.1', label: 'Do you have a communicable disease of public health significance?', type: 'yesno', humanOnly: true },
+  secArrest: { screen: 'security', n: '7.2', label: 'Have you ever been arrested or convicted for any offence or crime?', type: 'yesno', humanOnly: true },
+  secDrugs: { screen: 'security', n: '7.3', label: 'Have you ever violated any law relating to controlled substances?', type: 'yesno', humanOnly: true },
+  secTerror: { screen: 'security', n: '7.4', label: 'Do you seek to engage in espionage, sabotage or terrorist activities?', type: 'yesno', humanOnly: true },
+  secOverstay: { screen: 'security', n: '7.5', label: 'Have you ever overstayed a visa or been deported from any country?', type: 'yesno', humanOnly: true }
 };
 
-const listeners = new Set();
+// The "pile": everything the applicant already has, as an agent would read it.
+// Three discrepancies are planted on purpose — see rules below.
+export const DOCUMENTS = [
+  {
+    id: 'passport', kind: 'Passport — biographic page (OCR)',
+    text: `TYPE P  CODE UKR  PASSPORT No FE882140
+SURNAME/ПРІЗВИЩЕ         KOVALENKO
+GIVEN NAMES/ІМ'Я          MARIIA
+NATIONALITY               UKRAINE
+DATE OF BIRTH             14 MAR 1991
+SEX F   PLACE OF BIRTH    LVIV / UKR
+DATE OF ISSUE             03 AUG 2021   AUTHORITY 4601
+DATE OF EXPIRY            14 JUN 2027
+P<UKRKOVALENKO<<MARIIA<<<<<<<<<<<<<<<<<<<<<<<<
+FE882140<7UKR9103147F2706148<<<<<<<<<<<<<<<04`
+  },
+  {
+    id: 'employer', kind: 'Employer letter (PDF)',
+    text: `NOLTIC LLC · Heroiv UPA St. 73, Lviv 79018, Ukraine · +380 32 297 1120
 
+To whom it may concern,
+
+This letter confirms that Ms. Maria Kovalenko has been employed by Noltic LLC since 2 March 2020 as a Senior Salesforce Developer. Her current gross salary is UAH 132,000 per month. Her responsibilities include designing and building Lightning Web Components, integrating Salesforce with external systems, and leading a team of three developers.
+
+Ms. Kovalenko will attend the Salesforce Developer Summit in San Francisco from 13 to 16 October 2026 as a speaker. Noltic LLC covers all travel and accommodation costs. She will return to her position in Lviv on 20 October 2026.
+
+Ihor Melnyk, CEO — 21 August 2026`
+  },
+  {
+    id: 'invitation', kind: 'Conference invitation (email)',
+    text: `From: speakers@devsummit.example
+Subject: Speaker confirmation — Salesforce Developer Summit 2026
+
+Dear Maria,
+We are delighted to confirm your session "Agents in the Lightning UI" at the Salesforce Developer Summit, Moscone Center West, 800 Howard St, San Francisco, CA 94103. The conference runs 13–16 October 2026. Please contact Dana Whitfield (Program Chair, +1 415 555 0188) for any letters you need for your visa.`
+  },
+  {
+    id: 'flight', kind: 'Flight itinerary',
+    text: `BOOKING REF 7KQ2LM · Passenger KOVALENKO/MARIIA MS
+LH 1493  LWO 12OCT26 06:40 → FRA 08:55
+UA  59   FRA 12OCT26 10:15 → SFO 13:05
+UA  58   SFO 19OCT26 16:20 → FRA 12:35 (+1)
+LH 1492  FRA 20OCT26 14:10 → LWO 17:45`
+  },
+  {
+    id: 'notes', kind: 'Your own notes (editable)', editable: true,
+    text: `Marital status: single. Never been to the U.S. before. Never lost a passport.
+Passport was issued in Lviv.
+Email maria.kovalenko@example.com, mobile +380 67 555 0142.
+Home address: vul. Zelena 109, apt 14, Lviv 79035, Ukraine.`
+  },
+  {
+    id: 'hotel', kind: 'Hotel confirmation',
+    text: `Hotel Zephyr Fisherman's Wharf · 250 Beach St, San Francisco, CA 94133
+Guest: Maria Kovalenko · Confirmation 88214-ZF
+Check-in  Mon 12 Oct 2026
+Check-out Sun 18 Oct 2026   (6 nights, Queen room, non-refundable)
+Billed to: Noltic LLC`
+  }
+];
+
+// Rules the consulate would apply. Each returns null, or
+// { severity: 'error' | 'warning', finding }. Errors block submission.
+const err = (finding) => ({ severity: 'error', finding });
+const warn = (finding) => ({ severity: 'warning', finding });
+
+export const RULES = [
+  {
+    id: 'R1', title: 'Names must match the passport exactly',
+    check: (f) => {
+      const passportGiven = 'MARIIA', passportSurname = 'KOVALENKO';
+      const bad = [];
+      if (f.givenNames && f.givenNames.trim().toUpperCase() !== passportGiven) bad.push(`given names "${f.givenNames}" vs passport "${passportGiven}"`);
+      if (f.surname && f.surname.trim().toUpperCase() !== passportSurname) bad.push(`surname "${f.surname}" vs passport "${passportSurname}"`);
+      return bad.length ? err(`Consulates compare the form against the passport's machine-readable zone. Mismatch: ${bad.join('; ')}. Use the passport spelling and put other spellings under 2.3 "Other names used".`) : null;
+    }
+  },
+  {
+    id: 'R2', title: 'Passport valid six months beyond departure',
+    check: (f) => {
+      if (!f.passportExpires || !f.departureDate) return null;
+      const exp = new Date(f.passportExpires), dep = new Date(f.departureDate);
+      const needed = new Date(dep); needed.setMonth(needed.getMonth() + 6);
+      const neededIso = needed.toISOString().slice(0, 10);
+      if (exp < needed) return err(`Passport expires ${f.passportExpires}, but must be valid until at least ${neededIso} (six months after ${f.departureDate}). Renew the passport before applying.`);
+      const marginDays = Math.round((exp - needed) / 86400000);
+      if (marginDays < 90) return warn(`Passport meets the six-month rule by only ${marginDays} days (needed ${neededIso}, expires ${f.passportExpires}). If the trip slips, this becomes a refusal. Consider renewing first.`);
+      return null;
+    }
+  },
+  {
+    id: 'R3', title: 'Accommodation must cover the whole stay',
+    check: (f, s) => {
+      const hotel = s.documents.find((d) => d.id === 'hotel');
+      if (!hotel?.attached || !f.departureDate) return null;
+      const checkout = '2026-10-18';
+      const hasSecondAddress = (f.usAddress || '').split(/\n|;/).map((x) => x.trim()).filter(Boolean).length > 1;
+      if (f.departureDate > checkout && !hasSecondAddress) return err(`Hotel confirmation ends ${checkout} but departure is ${f.departureDate}: the night of ${checkout} is unaccounted for. Extend the booking, or add the address for that night as a second line in 4.4.`);
+      return null;
+    }
+  },
+  {
+    id: 'R4', title: 'Petition-based categories need a receipt number',
+    check: (f) => {
+      const cat = VISA_CATEGORIES.find((c) => c.code === f.visaCategory);
+      if (cat?.petition && !f.petitionNumber) return err(`${cat.code} requires an approved petition. Enter the I-129 receipt number in 1.2, or choose a different category.`);
+      return null;
+    }
+  },
+  {
+    id: 'R5', title: 'Security questions answered by the applicant',
+    check: (f) => {
+      const open = Object.entries(FIELDS).filter(([n, sp]) => sp.humanOnly && !f[n]).map(([, sp]) => sp.n);
+      return open.length ? err(`Questions ${open.join(', ')} are unanswered. These must be answered personally by the applicant — an agent cannot fill them.`) : null;
+    }
+  },
+  {
+    id: 'R6', title: 'Purpose consistent with category',
+    check: (f) => {
+      if (f.visaCategory === 'B-1' && /tourism|vacation|holiday/i.test(f.purpose || '')) return err('Purpose describes tourism but category is B-1 (business). Choose B-2 or describe the business purpose.');
+      if (f.visaCategory === 'B-2' && /conference|speaker|meeting|business/i.test(f.purpose || '')) return warn('Purpose mentions business activity but category is B-2 (tourism). Conference attendance is normally B-1.');
+      return null;
+    }
+  }
+];
+
+export const MRV_FEE_USD = 185;
+
+export const SLOTS = [
+  { id: 'slot-1', date: '2026-09-15', time: '08:30', location: 'U.S. Embassy Kyiv — Nonimmigrant Visa Unit' },
+  { id: 'slot-2', date: '2026-09-15', time: '13:45', location: 'U.S. Embassy Kyiv — Nonimmigrant Visa Unit' },
+  { id: 'slot-3', date: '2026-09-23', time: '10:00', location: 'U.S. Consulate General Kraków' },
+  { id: 'slot-4', date: '2026-10-01', time: '09:15', location: 'U.S. Embassy Warsaw' }
+];
+
+const listeners = new Set();
 const state = {
-  step: 'applicant',
+  screen: 'category',
   fields: Object.fromEntries(Object.keys(FIELDS).map((k) => [k, ''])),
-  documents: [],
-  proposal: null, // { changes: [{field, from, to}], note, source }
-  interviewSlot: null,
-  submission: null, // { reference, submittedAt }
+  documents: DOCUMENTS.map((d) => ({ ...d, attached: false })),
+  proposal: null,
+  fee: null,          // { paid: true, amount, reference, at }
+  interview: null,    // slot
+  submission: null,   // { reference, at }
   activity: []
 };
 
-function notify() {
-  for (const fn of listeners) fn(state);
-}
-
-export function subscribe(fn) {
-  listeners.add(fn);
-  fn(state);
-  return () => listeners.delete(fn);
-}
-
-export function getState() {
-  return state;
-}
-
-export const fieldSpec = FIELDS;
-export const steps = STEPS;
+function notify() { for (const fn of listeners) fn(state); }
+export function subscribe(fn) { listeners.add(fn); fn(state); return () => listeners.delete(fn); }
+export function getState() { return state; }
 
 export function logActivity(kind, text) {
-  state.activity.unshift({ kind, text, at: new Date().toLocaleTimeString() });
+  state.activity.unshift({ kind, text, at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) });
   state.activity = state.activity.slice(0, 40);
   notify();
 }
@@ -76,59 +271,71 @@ export function setField(name, value, { silent } = {}) {
   if (!silent) notify();
 }
 
-export function goToStep(stepId) {
-  if (!STEPS.some((s) => s.id === stepId)) throw new Error(`Unknown step '${stepId}'`);
-  state.step = stepId;
+export function goToScreen(id) {
+  if (!SCREENS.some((s) => s.id === id)) throw new Error(`Unknown screen '${id}'`);
+  state.screen = id;
   notify();
 }
 
-// The agent stages changes here rather than writing them straight in.
-export function proposeChanges(updates, { note, source = 'agent' } = {}) {
-  const changes = [];
+/** Stage changes. Returns { staged, refused } — humanOnly fields are refused. */
+export function proposeChanges(updates, { note, sources = {} } = {}) {
+  const staged = [], refused = [];
   for (const [field, to] of Object.entries(updates)) {
-    if (!(field in FIELDS)) continue;
+    const spec = FIELDS[field];
+    if (!spec) { refused.push({ field, reason: 'unknown field' }); continue; }
+    if (spec.humanOnly) { refused.push({ field, reason: 'must be answered by the applicant personally' }); continue; }
     const from = state.fields[field];
     if (String(from) === String(to)) continue;
-    changes.push({ field, from, to: String(to) });
+    staged.push({ field, from, to: String(to), source: sources[field] || null });
   }
-  state.proposal = changes.length ? { changes, note, source } : null;
+  state.proposal = staged.length ? { changes: staged, note } : null;
   notify();
-  return changes;
+  return { staged, refused };
 }
 
 export function applyProposal() {
   if (!state.proposal) return 0;
-  const { changes } = state.proposal;
-  for (const { field, to } of changes) state.fields[field] = to;
+  for (const { field, to } of state.proposal.changes) state.fields[field] = to;
+  const n = state.proposal.changes.length;
   state.proposal = null;
   notify();
-  return changes.length;
+  return n;
 }
 
 export function discardProposal() {
-  const count = state.proposal?.changes.length || 0;
+  const n = state.proposal?.changes.length || 0;
   state.proposal = null;
   notify();
-  return count;
+  return n;
 }
 
-export function addDocument(doc) {
-  state.documents.push(doc);
+export function setDocumentText(id, text) {
+  const doc = state.documents.find((d) => d.id === id);
+  if (!doc?.editable) throw new Error(`Document '${id}' is not editable`);
+  doc.text = text;
   notify();
 }
 
-export function setInterviewSlot(slot) {
-  state.interviewSlot = slot;
+export function attachDocument(id, attached = true) {
+  const doc = state.documents.find((d) => d.id === id);
+  if (!doc) throw new Error(`Unknown document '${id}'`);
+  doc.attached = attached;
   notify();
+  return doc;
 }
 
-export function setSubmission(submission) {
-  state.submission = submission;
-  notify();
-}
+export function setFee(fee) { state.fee = fee; notify(); }
+export function setInterview(slot) { state.interview = slot; notify(); }
+export function setSubmission(sub) { state.submission = sub; notify(); }
 
 export function missingRequired() {
   return Object.entries(FIELDS)
-    .filter(([name]) => !String(state.fields[name] || '').trim())
-    .map(([name, spec]) => ({ name, label: spec.label, step: spec.step }));
+    .filter(([name, sp]) => !sp.optional && !String(state.fields[name] || '').trim())
+    .map(([name, sp]) => ({ name, n: sp.n, label: sp.label, screen: sp.screen }));
 }
+
+export function runRules() {
+  return RULES.map((r) => ({ id: r.id, title: r.title, ...(r.check(state.fields, state) || {}) }))
+    .filter((r) => r.finding);
+}
+export const blockingProblems = () => runRules().filter((r) => r.severity === 'error');

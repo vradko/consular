@@ -20,7 +20,7 @@ function render() {
     root.hidden = true;
     return;
   }
-  const { title, summary, detail, consequence, armed } = current;
+  const { title, summary, detail, consequence, armed, approveLabel } = current;
   root.hidden = false;
   root.innerHTML = `
     <div class="gate-backdrop"></div>
@@ -35,14 +35,14 @@ function render() {
       <div class="gate-actions">
         <button type="button" data-gate="reject" class="btn btn-ghost">Not now</button>
         <button type="button" data-gate="approve" class="btn btn-danger"${armed ? '' : ' disabled'}>
-          ${armed ? 'Approve' : 'Approve'}
+          ${escapeHtml(approveLabel || 'Approve')}
         </button>
       </div>
       ${armed ? '' : '<p class="gate-arming">Enabling in a moment…</p>'}
     </div>`;
-  root.querySelector('[data-gate="reject"]').onclick = () => settle(false);
+  root.querySelector('[data-gate="reject"]').onclick = () => settle('declined');
   const approve = root.querySelector('[data-gate="approve"]');
-  approve.onclick = () => current?.armed && settle(true);
+  approve.onclick = () => current?.armed && settle('approved');
   root.querySelector('.gate-dialog').focus();
 }
 
@@ -52,14 +52,14 @@ function escapeHtml(value) {
   );
 }
 
-function settle(approved) {
+function settle(outcome) {
   if (!current) return;
   const { resolve, timeoutId, armTimerId } = current;
   clearTimeout(timeoutId);
   clearTimeout(armTimerId);
   current = null;
   render();
-  resolve(approved);
+  resolve(outcome);
   if (queue.length) show(queue.shift());
 }
 
@@ -70,17 +70,17 @@ function show(request) {
     current.armed = true;
     render();
   }, ARM_DELAY_MS);
-  current.timeoutId = setTimeout(() => settle(false), DECISION_TIMEOUT_MS);
+  current.timeoutId = setTimeout(() => settle('timeout'), DECISION_TIMEOUT_MS);
   render();
 }
 
 /**
  * Ask the person to approve an irreversible action.
- * Resolves true (approved) or false (declined or timed out).
+ * Resolves 'approved' | 'declined' | 'timeout'.
  */
-export function requestApproval({ title, summary, detail = [], consequence }) {
+export function requestApproval({ title, summary, detail = [], consequence, approveLabel }) {
   return new Promise((resolve) => {
-    const request = { title, summary, detail, consequence, resolve };
+    const request = { title, summary, detail, consequence, approveLabel, resolve };
     if (current) queue.push(request);
     else show(request);
   });
