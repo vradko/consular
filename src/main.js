@@ -64,14 +64,51 @@ function renderCategory(state, screen) {
     <div class="rows">${fieldRow('petitionNumber', FIELDS.petitionNumber, state)}</div>`;
 }
 
+let pasteOpen = false;
+const openDocs = new Set();
+const FILE_TYPES = '.txt,.md,.pdf,.json,.csv,.eml,text/plain,application/pdf';
+
 function renderDocuments(state, screen) {
   const docs = state.documents.filter((d) => !d.editable);
-  return `${screenHeader(screen, 'Attach the documents that support this application. Your agent can read them and attach the right ones.')}
-    ${docs.length ? `<ul class="doc-attach">${docs.map((d) => `
-      <li class="${d.attached ? 'on' : ''}">
-        <label><input type="checkbox" data-doc="${d.id}"${d.attached ? ' checked' : ''}> <strong>${esc(d.kind)}</strong></label>
-        <span class="doc-state">${d.attached ? 'attached' : 'not attached'}</span>
-      </li>`).join('')}</ul>` : '<p class="docs-empty">No documents yet. Add them in the Your documents panel, or load the sample applicant.</p>'}`;
+  const notes = state.documents.find((d) => d.editable);
+  const included = docs.filter((d) => d.attached).length;
+  return `${screenHeader(screen, 'Upload everything that supports this application — passport page, letters, invitations, bookings, as many as you need. Your agent reads all of them and ticks the ones to include.')}
+    <div class="dropzone" data-dropzone>
+      <p class="dz-text"><strong>Drop files here.</strong> Text or PDF, read in this browser — nothing is uploaded anywhere. Scans without a text layer can't be read; paste the text instead.</p>
+      <div class="dz-actions">
+        <label class="btn btn-primary btn-file">Add files<input type="file" data-doc-files multiple accept="${FILE_TYPES}" hidden></label>
+        <button type="button" class="btn btn-ghost" data-paste-toggle>${pasteOpen ? 'Close paste box' : 'Paste text'}</button>
+        ${state.sampleLoaded ? '' : '<button type="button" class="btn btn-ghost" data-load-sample>Load sample applicant</button>'}
+        <a class="btn btn-ghost" href="${import.meta.env.BASE_URL}sample-documents.zip" download title="Maria Kovalenko's five documents as PDFs, to try the upload path">Sample PDFs (zip)</a>
+      </div>
+      ${pasteOpen ? `<div class="paste-box">
+        <input type="text" class="ctl" data-paste-kind placeholder="What is it? e.g. Employer letter">
+        <textarea class="ctl" rows="6" data-paste-text placeholder="Paste the document text here"></textarea>
+        <div class="paste-actions"><button type="button" class="btn btn-primary" data-paste-add>Add document</button></div>
+      </div>` : ''}
+    </div>
+    ${docs.length ? `<ul class="doc-attach doc-list">${docs.map((d) => `
+      <li class="${d.attached ? 'on' : ''}${d.own ? ' own' : ''}">
+        <input type="checkbox" class="doc-check" data-doc="${d.id}"${d.attached ? ' checked' : ''} aria-label="Include ${esc(d.kind)}">
+        <details class="doc-body" data-open-id="${d.id}"${openDocs.has(d.id) ? ' open' : ''}>
+          <summary><span class="doc-kind">${esc(d.kind)}</span>${d.own ? '<span class="doc-own-tag">yours</span>' : ''}<span class="doc-preview">${esc(d.text.split('\n')[0].slice(0, 70))}${d.text.length > 70 ? '…' : ''}</span></summary>
+          <pre>${esc(d.text)}</pre>
+        </details>
+        <span class="doc-state">${d.attached ? 'included' : 'not included'}</span>
+        <button type="button" class="doc-remove" data-remove="${d.id}" title="Remove" aria-label="Remove ${esc(d.kind)}">×</button>
+      </li>`).join('')}</ul>
+      <p class="doc-foot muted small"><span>${included} of ${docs.length} included with the application. Open a document to see exactly what your agent reads.</span><button type="button" class="link" data-clear-docs>Remove all</button></p>`
+      : '<p class="docs-empty">No documents yet. Add your own above, or load the sample applicant.</p>'}
+    <div class="rows notes-block">
+      <div class="row" data-row="notes">
+        <label class="row-label" for="f-notes">
+          <span class="row-n">8.1</span>
+          <span class="row-text">Anything no document covers</span>
+          <span class="row-hint">Marital status, phone, email, who pays, earlier U.S. trips — your agent reads this too.</span>
+        </label>
+        <div class="row-ctl"><textarea id="f-notes" class="ctl" rows="4" data-notes="${notes.id}" placeholder="Write it the way you'd tell a friend.">${esc(notes.text)}</textarea></div>
+      </div>
+    </div>`;
 }
 
 function renderReview(state, screen) {
@@ -123,7 +160,9 @@ function renderForm(state) {
 function renderParts(state) {
   $('parts').innerHTML = SCREENS.map((s) => {
     const fields = Object.entries(FIELDS).filter(([, sp]) => sp.screen === s.id && !sp.optional);
-    const done = fields.length > 0 && fields.every(([n]) => String(state.fields[n] || '').trim());
+    const done = s.id === 'documents'
+      ? state.documents.some((d) => d.attached)
+      : fields.length > 0 && fields.every(([n]) => String(state.fields[n] || '').trim());
     return `<button type="button" class="part${s.id === state.screen ? ' active' : ''}${done ? ' done' : ''}" data-screen="${s.id}" title="${esc(s.title)}">
       <span class="part-n">${s.part}</span><span class="part-t">${esc(s.title)}</span></button>`;
   }).join('');
@@ -148,23 +187,6 @@ function renderPolicy() {
     + `<li class="policy-human"><code>Part 7</code><span>${esc(ACTION_POLICY.humanOnly.why)}</span></li>`;
 }
 
-function renderDocs(state) {
-  const attachable = state.documents.filter((d) => !d.editable);
-  $('docs-count').textContent = attachable.length ? `${attachable.filter((d) => d.attached).length} of ${attachable.length} attached` : 'none yet';
-  $('docs-sample').hidden = state.sampleLoaded;
-  $('docs-clear').hidden = attachable.length === 0;
-  if (document.activeElement?.dataset?.notes) return; // don't re-render under the caret
-  $('docs-list').innerHTML = (attachable.length ? '' : '<li class="docs-empty">Nothing here yet. Add your own files, paste text, or load the sample applicant.</li>')
-    + state.documents.map((d, i) => `<li class="doc${d.attached ? ' attached' : ''}${d.editable ? ' editable' : ''}${d.own ? ' own' : ''}">
-    <details${d.editable || i === 0 ? ' open' : ''}><summary>
-      <span class="doc-kind">${esc(d.kind)}${d.own ? '<span class="doc-own-tag">yours</span>' : ''}</span>
-      <span class="doc-preview">${esc(d.text.split('\n')[0].slice(0, 48))}${d.text.length > 48 ? '…' : ''}</span>
-      <span class="doc-att">${d.attached ? 'attached' : ''}</span>
-      ${d.editable ? '' : `<button type="button" class="doc-remove" data-remove="${d.id}" title="Remove this document" aria-label="Remove ${esc(d.kind)}">×</button>`}</summary>
-    ${d.editable ? `<textarea data-notes="${d.id}" rows="5" placeholder="Anything no document contains: your phone, email, who pays for the trip, US contact…">${esc(d.text)}</textarea>` : `<pre>${esc(d.text)}</pre>`}</details>
-  </li>`).join('');
-}
-
 function renderActivity(state) {
   $('activity').innerHTML = state.activity.length
     ? state.activity.map((a) => `<li class="act act-${a.kind}"><span>${esc(a.text)}</span><time>${a.at}</time></li>`).join('')
@@ -173,16 +195,15 @@ function renderActivity(state) {
 
 function renderStrip(state) {
   const own = state.documents.filter((d) => !d.editable && d.own).length;
-  const panelHidden = $('layout').classList.contains('panel-hidden');
-  const where = panelHidden ? '<a href="#" data-show-panel>show the demo panel</a> to see them' : 'in <a href="#docs-card">Your documents</a>';
+  const where = '<a href="#" data-goto="documents">Part 8</a>';
   let text;
-  if (state.sampleLoaded) text = `<strong>Sample applicant loaded.</strong> Maria Kovalenko, a conference speaker, with her five documents ${where} — nothing to upload. Or replace them with your own.`;
-  else if (own) text = `<strong>${own} of your own document${own === 1 ? '' : 's'} loaded</strong> ${where}. Ask your agent to fill in the application from them.`;
-  else text = `<strong>No documents loaded.</strong> Add your own or load the sample applicant ${where}.`;
+  if (state.sampleLoaded) text = `<strong>Sample applicant loaded.</strong> Maria Kovalenko, a conference speaker, with her five documents in ${where} — nothing to upload. Or replace them with your own.`;
+  else if (own) text = `<strong>${own} of your own document${own === 1 ? '' : 's'} loaded</strong> in ${where}. Ask your agent to fill in the application from them.`;
+  else text = `<strong>No documents loaded.</strong> Add your own in ${where}, or load the sample applicant there.`;
   $('sample-strip').innerHTML = text;
 }
 
-subscribe((state) => { renderParts(state); renderForm(state); renderChanges(state); renderDocs(state); renderActivity(state); renderStrip(state); });
+subscribe((state) => { renderParts(state); renderForm(state); renderChanges(state); renderActivity(state); renderStrip(state); });
 renderPolicy();
 
 // ── demo panel toggle ───────────────────────────────────────────────
@@ -195,7 +216,7 @@ function setPanel(shown) {
   renderStrip(getState());
 }
 $('panel-toggle').onclick = () => setPanel($('layout').classList.contains('panel-hidden'));
-document.addEventListener('click', (e) => { if (e.target.closest('[data-show-panel]')) { e.preventDefault(); setPanel(true); $('docs-card').scrollIntoView({ behavior: 'smooth' }); } });
+document.addEventListener('click', (e) => { const g = e.target.closest('[data-goto]'); if (g) { e.preventDefault(); goToScreen(g.dataset.goto); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
 try { if (localStorage.getItem('consular.panel') === '0') setPanel(false); } catch {}
 
 // ── events ──────────────────────────────────────────────────────────
@@ -222,28 +243,34 @@ form.addEventListener('input', (e) => {
 });
 $('undo-batch').onclick = () => logActivity('discarded', `Undid ${undoLastBatch()} change(s) by the agent`);
 
-// ── documents: own files, pasted text, the sample ──────────────────
-$('docs-list').addEventListener('input', (e) => { if (e.target.dataset?.notes) setDocumentText(e.target.dataset.notes, e.target.value); });
-$('docs-list').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-remove]');
-  if (!b) return;
-  e.preventDefault();
-  const doc = getState().documents.find((d) => d.id === b.dataset.remove);
-  if (removeDocument(b.dataset.remove)) logActivity('discarded', `Removed ${doc?.kind || 'a document'}`);
+// ── documents (Part 8): own files, pasted text, the sample ─────────
+form.addEventListener('input', (e) => { if (e.target.dataset?.notes) setDocumentText(e.target.dataset.notes, e.target.value, { silent: true }); });
+form.addEventListener('change', (e) => { if (e.target.dataset?.docFiles !== undefined) { addFiles([...e.target.files]); e.target.value = ''; } });
+form.addEventListener('toggle', (e) => { const id = e.target.dataset?.openId; if (id) e.target.open ? openDocs.add(id) : openDocs.delete(id); }, true);
+form.addEventListener('click', (e) => {
+  const t = e.target;
+  const rm = t.closest('[data-remove]');
+  if (rm) {
+    const doc = getState().documents.find((d) => d.id === rm.dataset.remove);
+    if (removeDocument(rm.dataset.remove)) logActivity('discarded', `Removed ${doc?.kind || 'a document'}`);
+    return;
+  }
+  if (t.closest('[data-paste-toggle]')) { pasteOpen = !pasteOpen; renderForm(getState()); if (pasteOpen) form.querySelector('[data-paste-kind]')?.focus(); return; }
+  if (t.closest('[data-paste-add]')) {
+    const text = form.querySelector('[data-paste-text]').value.trim();
+    if (!text) return;
+    const kind = form.querySelector('[data-paste-kind]').value.trim() || text.split('\n')[0].slice(0, 40);
+    pasteOpen = false;
+    addDocument({ kind, text });
+    logActivity('ready', `Added "${kind}" from pasted text`);
+    return;
+  }
+  if (t.closest('[data-load-sample]')) { loadSampleDocuments(); logActivity('ready', 'Loaded the sample applicant (Maria Kovalenko, five documents)'); return; }
+  if (t.closest('[data-clear-docs]')) { clearDocuments(); logActivity('discarded', 'Removed all documents'); }
 });
-$('docs-sample').onclick = () => { loadSampleDocuments(); logActivity('ready', 'Loaded the sample applicant (Maria Kovalenko, five documents)'); };
-$('docs-clear').onclick = () => { clearDocuments(); logActivity('discarded', 'Removed all documents'); };
-$('doc-paste-toggle').onclick = () => { const f = $('paste-form'); f.hidden = !f.hidden; if (!f.hidden) $('paste-kind').focus(); };
-$('paste-cancel').onclick = () => { $('paste-form').hidden = true; };
-$('paste-form').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const text = $('paste-text').value.trim();
-  if (!text) return;
-  const kind = $('paste-kind').value.trim() || text.split('\n')[0].slice(0, 40);
-  addDocument({ kind, text });
-  logActivity('ready', `Added "${kind}" from pasted text`);
-  $('paste-kind').value = ''; $('paste-text').value = ''; $('paste-form').hidden = true;
-});
+form.addEventListener('dragover', (e) => { const z = e.target.closest('[data-dropzone]'); if (z) { e.preventDefault(); z.classList.add('drop-hover'); } });
+form.addEventListener('dragleave', (e) => { e.target.closest('[data-dropzone]')?.classList.remove('drop-hover'); });
+form.addEventListener('drop', (e) => { const z = e.target.closest('[data-dropzone]'); if (z) { e.preventDefault(); z.classList.remove('drop-hover'); addFiles([...e.dataTransfer.files]); } });
 
 async function readFile(file) {
   if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
@@ -273,11 +300,6 @@ async function addFiles(files) {
     }
   }
 }
-$('doc-files').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
-const dropZone = $('docs-card');
-dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drop-hover'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drop-hover'));
-dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drop-hover'); addFiles([...e.dataTransfer.files]); });
 
 // ── agent ───────────────────────────────────────────────────────────
 window.__consularState = getState;

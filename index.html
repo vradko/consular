@@ -34,7 +34,7 @@
 
       <aside class="side-pane" id="side-pane">
         <p class="demo-note">
-          <strong>Demo panel.</strong> Shows what this page tells your agent and what to expect from it. It is not part of the application — hide it to see the form as an applicant would.
+          <strong>Demo panel.</strong> Shows what this page tells your agent and what the agent did. It is not part of the application — hide it to see the form as an applicant would.
         </p>
 
         <section class="panel panel-changes" id="changes-card" hidden>
@@ -51,24 +51,6 @@
           <header class="panel-head"><h2>Before doing these, your agent will ask you</h2></header>
           <ul class="policy" id="policy-list"></ul>
           <p class="muted small">Everything else changes only the draft and runs without asking. Declared to the agent up front through <code>get-action-policy</code>.</p>
-        </section>
-
-        <section class="panel panel-docs" id="docs-card">
-          <header class="panel-head"><h2>Your documents</h2><span class="panel-tag" id="docs-count"></span></header>
-          <p class="muted small">Whatever you give it, your agent reads as text. Bring your own, or use the sample applicant.</p>
-          <ul class="docs" id="docs-list"></ul>
-          <div class="docs-add">
-            <label class="btn btn-ghost btn-file">Add files<input type="file" id="doc-files" multiple accept=".txt,.md,.pdf,.json,.csv,.eml,text/plain,application/pdf" hidden></label>
-            <button type="button" class="btn btn-ghost" id="doc-paste-toggle">Paste text</button>
-            <button type="button" class="btn btn-ghost" id="docs-sample">Load sample applicant</button>
-            <button type="button" class="btn btn-ghost" id="docs-clear">Remove all</button>
-          </div>
-          <form class="paste-form" id="paste-form" hidden>
-            <input type="text" id="paste-kind" placeholder="What is it? e.g. Employer letter" class="ctl">
-            <textarea id="paste-text" rows="5" placeholder="Paste the document text here" class="ctl"></textarea>
-            <div class="paste-actions"><button type="button" class="btn btn-ghost" id="paste-cancel">Cancel</button><button type="submit" class="btn btn-primary">Add document</button></div>
-          </form>
-          <p class="muted small" id="docs-hint">Text and PDF files are read in the browser. Scans without a text layer can't be read — paste the text instead.</p>
         </section>
 
         <section class="panel panel-activity">

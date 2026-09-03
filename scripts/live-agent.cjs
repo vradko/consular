@@ -68,7 +68,7 @@ function parseJson(text) {
   await new Promise((r) => ws.on('open', r));
 
   if (NOTES) {
-    await evaluate(ws, `(() => { const t = document.getElementById('raw-input'); t.value = ${JSON.stringify(NOTES)}; return 'ok'; })()`);
+    await evaluate(ws, `(() => { window.__consularState().documents.find((d) => d.editable).text = ${JSON.stringify(NOTES)}; return 'ok'; })()`);
   }
   if (SECURITY) {
     await evaluate(ws, `(() => {

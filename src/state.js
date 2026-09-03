@@ -112,7 +112,7 @@ export const FIELDS = {
 // Three discrepancies are planted on purpose — see rules below.
 export const SAMPLE_DOCUMENTS = [
   {
-    id: 'passport', kind: 'Passport — biographic page (OCR)',
+    id: 'passport', kind: 'Passport — biographic page',
     text: `TYPE P  CODE UKR  PASSPORT No FE882140
 SURNAME/ПРІЗВИЩЕ         KOVALENKO
 GIVEN NAMES/ІМ'Я          MARIIA
@@ -125,7 +125,7 @@ P<UKRKOVALENKO<<MARIIA<<<<<<<<<<<<<<<<<<<<<<<<
 FE882140<7UKR9103147F2706148<<<<<<<<<<<<<<<04`
   },
   {
-    id: 'employer', kind: 'Employer letter (PDF)',
+    id: 'employer', kind: 'Employer letter',
     text: `NOLTIC LLC · Heroiv UPA St. 73, Lviv 79018, Ukraine · +380 32 297 1120
 
 To whom it may concern,
@@ -153,7 +153,7 @@ UA  58   SFO 19OCT26 16:20 → FRA 12:35 (+1)
 LH 1492  FRA 20OCT26 14:10 → LWO 17:45`
   },
   {
-    id: 'notes', kind: 'Your own notes (editable)', editable: true,
+    id: 'notes', kind: 'Your own notes', editable: true,
     text: `Marital status: single. Never been to the U.S. before. Never lost a passport.
 Passport was issued in Lviv.
 Email maria.kovalenko@example.com, mobile +380 67 555 0142.
@@ -390,11 +390,11 @@ export function clearDocuments() {
   notify();
 }
 
-export function setDocumentText(id, text) {
+export function setDocumentText(id, text, { silent } = {}) {
   const doc = state.documents.find((d) => d.id === id && d.editable);
   if (!doc) return;
   doc.text = text;
-  notify();
+  if (!silent) notify();
 }
 
 export function attachDocument(id, attached = true) {

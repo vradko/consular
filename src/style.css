@@ -188,3 +188,25 @@ textarea.ctl { resize: vertical; min-height: 56px; }
 .docs-empty { font-size: 13px; color: var(--ink-3); padding: 12px; border: 1px dashed var(--rule-2); text-align: center; }
 .doc.drop-hover, .panel-docs.drop-hover { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .gate-why { margin: -8px 0 16px; font-size: 12px; color: var(--ink-3); }
+
+/* ── Part 8: documents live in the sheet ── */
+.dropzone { border: 2px dashed #b9bfca; border-radius: 6px; padding: 18px 20px; background: #fff; margin-bottom: 18px; }
+.dropzone.drop-hover { border-color: var(--accent); background: var(--accent-soft); }
+.dz-text { margin: 0 0 12px; font-size: 13.5px; color: var(--ink-2); }
+.dz-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.dz-actions .btn { font-size: 13px; padding: 7px 12px; text-decoration: none; }
+.paste-box { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.doc-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: start; padding: 10px 0; }
+.doc-list .doc-check { margin-top: 3px; }
+.doc-list .doc-body { min-width: 0; }
+.doc-list summary { display: block; cursor: pointer; list-style: none; font-size: 14px; }
+.doc-list summary::-webkit-details-marker { display: none; }
+.doc-list .doc-kind { font-weight: 600; color: var(--ink); }
+.doc-list .doc-preview { display: block; margin-top: 2px; font: 11.5px var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.doc-list pre { margin: 8px 0 0; padding: 10px 12px; border: 1px solid var(--rule); background: #faf9f4; font: 11.5px/1.45 var(--mono); white-space: pre-wrap; color: var(--ink-2); max-height: 260px; overflow: auto; }
+.doc-list .doc-state { margin-top: 3px; white-space: nowrap; }
+.doc-list .doc-remove { margin-top: 1px; font-size: 16px; }
+.doc-foot { display: flex; justify-content: space-between; gap: 12px; margin: 10px 0 0; }
+.link { background: none; border: 0; padding: 0; font: inherit; color: var(--link, #1f3f9a); text-decoration: underline; cursor: pointer; }
+.notes-block { margin-top: 22px; }
+.notes-block textarea { font-family: var(--sans); }
