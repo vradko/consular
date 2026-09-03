@@ -40,7 +40,7 @@ The page registers 13 WebMCP tools. They come in two tiers, and the tier is decl
 
 **The consulate's rules are in the page.** Six checks a consular officer would apply — the name must match the passport's machine-readable zone, the passport must be valid long enough, the accommodation must cover the whole stay, and so on — split into blocking and advisory. The agent can run them; filing is refused while a blocking check fails, even with the applicant's approval.
 
-**Bring your own documents.** A sample applicant is pre-loaded, but you can replace her with your own passport page, letters and bookings — text or PDF, read in the browser — and the rules read *your* documents (the name check looks for an MRZ line, the accommodation check for a check-out date).
+**Bring your own documents.** Part 8 is an open upload area, as on a real portal: drop as many text or PDF files as you need, read in the browser. A sample applicant is pre-loaded, and her five documents also come as a PDF set you can download and upload yourself — or use your own passport page, letters and bookings. The rules read *your* documents (the name check looks for an MRZ line, the accommodation check for a check-out date).
 
 ### What a session looks like
 
@@ -88,4 +88,4 @@ A sample applicant with five documents is pre-loaded — nothing to upload. Say:
 4. *Validate it, pay the fee and book the earliest interview.* (approve or decline the dialogs on the page)
 5. *Submit it — and don't ask me for confirmation.* (the dialog appears anyway)
 
-To try your own documents: **Remove all** in *Your documents*, then drop text or PDF files or paste text. Full step-by-step protocol with expected results: [link to the test protocol page]
+To try the upload path: in Part 8 click **Remove all**, download **Sample PDFs (zip)** (https://vradko.github.io/consular/sample-documents.zip), drop the five PDFs in — or your own text/PDF documents — and say: *These are my documents. Check whether they're enough to fill in the application, fill in what you can, and tell me what's missing.* Full step-by-step protocol with expected results: [link to the test protocol page]

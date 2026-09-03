@@ -54,9 +54,15 @@ Expect: the agent refuses to pay while validation is blocking — or, once you a
 
 ### Your own documents
 
-Replace the sample with your own in the **Your documents** panel: drop text or PDF files, paste text, or type notes. Everything is read in the browser (PDFs through pdf.js; scans without a text layer cannot be read — paste the text). The consular checks read *your* documents: the name rule looks for a passport machine-readable zone, the accommodation rule for a check-out date.
+Part 8, *Supporting documents*, is an open upload area: drop as many text or PDF files as you need, paste text, and write anything no document covers in the notes box. Everything is read in the browser (PDFs through pdf.js; scans without a text layer cannot be read — paste the text). The consular checks read *your* documents: the name rule looks for a passport machine-readable zone, the accommodation rule for a check-out date.
 
-The **demo panel** on the right shows what the page is telling the agent — the policy, the documents, an activity log. It is not part of the application; hide it to see the form as an applicant would.
+To try the upload path without your own paperwork, download the sample set — Maria's five documents as PDFs — from the **Sample PDFs (zip)** button in Part 8 or directly: https://vradko.github.io/consular/sample-documents.zip. Remove the pre-loaded sample, drop the PDFs in, and say:
+
+> These are my documents. Check whether they're enough to fill in the application, fill in what you can, and tell me what's missing.
+
+Expect the same 28 fields with sources, and a list of what no document covers: marital status, phone, home address, city of issue, previous U.S. travel, and the security questions.
+
+The **demo panel** on the right shows what the page is telling the agent — the policy, what the agent wrote, an activity log. It is not part of the application; hide it to see the form as an applicant would.
 
 ## Run it locally
 
@@ -77,11 +83,12 @@ node scripts/live-agent.cjs --port 9562 --task "pay the fee and book an intervie
 ## Layout
 
 ```
-index.html            the form, the demo panel, the gate root
-src/state.js          fields, screens, visa categories, sample documents, consular rules, state
-src/agent/tools.js    the 13 WebMCP tools and the action policy
-src/agent/gate.js     the approval dialog: arm delay, timeout, distinct outcomes
-src/main.js           rendering, document upload, demo panel toggle
+index.html               the form, the demo panel, the gate root
+src/state.js             fields, screens, visa categories, sample documents, consular rules, state
+src/agent/tools.js       the 13 WebMCP tools and the action policy
+src/agent/gate.js        the approval dialog: arm delay, timeout, distinct outcomes
+src/main.js              rendering, Part 8 document upload, demo panel toggle
+public/sample-documents  Maria's five documents as PDFs (+ sample-documents.zip)
 scripts/live-agent.cjs   live-LLM test harness
 ```
 
