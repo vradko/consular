@@ -38,13 +38,13 @@ The page registers 13 WebMCP tools. They come in two tiers, and the tier is decl
 
 **Some fields are human-only.** The security and background declarations are legal statements. `fill-fields` refuses them; the agent can explain a question but not answer it.
 
-**The consulate's rules are in the page.** Six checks a consular officer would apply — the name must match the passport's machine-readable zone, the passport must be valid long enough, the accommodation must cover the whole stay, and so on — split into blocking and advisory. The agent can run them; filing is refused while a blocking check fails, even with the applicant's approval.
+**The consulate's rules are in the page.** Seven checks a consular officer would apply — the name must match the passport's machine-readable zone, the passport must be valid long enough, the accommodation must cover the whole stay, and so on — split into blocking and advisory. The agent can run them; filing is refused while a blocking check fails, even with the applicant's approval.
 
 **Bring your own documents.** Part 8 is an open upload area, as on a real portal: drop as many text or PDF files as you need, read in the browser. A sample applicant is pre-loaded, and her five documents also come as a PDF set you can download and upload yourself — or use your own passport page, letters and bookings. The rules read *your* documents (the name check looks for an MRZ line, the accommodation check for a check-out date).
 
 ### What a session looks like
 
-"Fill in my application from my documents." The agent calls `get-action-policy`, reads all five documents, picks B-1 from the trip description, writes about 35 fields in one call with a source for each, spells the name as the passport does and files the other spelling under *Other names used*, flags the uncovered hotel night unprompted, and leaves the security questions to the applicant.
+"Fill in my application from my documents." The agent calls `get-action-policy`, reads all five documents, picks B-1 from the trip description, writes around 30 fields in one call with a source for each, spells the name as the passport does and files the other spelling under *Other names used*, flags the uncovered hotel night unprompted, and leaves the security questions to the applicant.
 
 "Validate it, pay the fee and book the earliest interview." The agent runs the checks, refuses to spend money while a blocking check fails ("I'd rather you see this first"), and — once the applicant fixes the gap and answers the declarations — walks through three approval dialogs to a filed application.
 
@@ -54,7 +54,7 @@ Vanilla JavaScript and Vite; the whole "consulate" is a few hundred lines of rul
 
 ### What I ran into
 
-- Chrome's preview build passes tool arguments as a JSON string, returns `inputSchema` stringified, rejects a second call while one is pending, and collapses `isError` into a generic rejection. Consular handles all four; the gate queues calls instead of dropping them.
+- Chrome's preview build passes tool arguments as a JSON string, returns `inputSchema` stringified, drops `destructiveHint` from annotations, and collapses a thrown error into a generic "invocation failed". Consular handles all of it: every tool answers with structured `{refused, reason}` text, and the gate queues a second dialog instead of dropping it.
 - ChatGPT's built-in browser discovers imperative tools on the top-level page only — no declarative `<form toolname>`, no iframes — so everything is registered imperatively.
 - My first version staged every change as a proposal the applicant had to accept. Testing it as a user showed that was the wrong line: reversible changes should just happen and be visible. The current two-tier design came out of that.
 

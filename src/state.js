@@ -1,9 +1,9 @@
 // Application state for a nonimmigrant visa application modelled on the
 // U.S. DS-160 (demo — not affiliated with any government).
 //
-// The agent never writes a field directly: it stages a proposal, the applicant
-// sees before/after with provenance, and applies it. Some answers are
-// human-only and cannot be proposed at all.
+// Reversible changes from the agent go straight into the form, highlighted
+// with their source and undoable as a batch. Consequential actions stop for
+// the applicant. Some answers are human-only and cannot be written at all.
 
 export const VISA_CATEGORIES = [
   {
@@ -109,7 +109,7 @@ export const FIELDS = {
 };
 
 // The sample applicant: everything Maria already has, as an agent would read it.
-// Three discrepancies are planted on purpose — see rules below.
+// Two discrepancies are planted on purpose — see rules below.
 export const SAMPLE_DOCUMENTS = [
   {
     id: 'passport', kind: 'Passport — biographic page',
@@ -119,10 +119,10 @@ GIVEN NAMES/ІМ'Я          MARIIA
 NATIONALITY               UKRAINE
 DATE OF BIRTH             14 MAR 1991
 SEX F   PLACE OF BIRTH    LVIV / UKR
-DATE OF ISSUE             03 AUG 2021   AUTHORITY 4601
+DATE OF ISSUE             14 JUN 2017   AUTHORITY 4601
 DATE OF EXPIRY            14 JUN 2027
-P<UKRKOVALENKO<<MARIIA<<<<<<<<<<<<<<<<<<<<<<<<
-FE882140<7UKR9103147F2706148<<<<<<<<<<<<<<<04`
+P<UKRKOVALENKO<<MARIIA<<<<<<<<<<<<<<<<<<<<<<
+FE882140<6UKR9103144F2706144<<<<<<<<<<<<<<06`
   },
   {
     id: 'employer', kind: 'Employer letter',
@@ -175,7 +175,7 @@ export function passportNamesFrom(documents) {
     for (const raw of (d.text || '').split('\n')) {
       // TD3 line 1: P, type, 3-letter country, SURNAME<<GIVEN<NAMES, padded with <
       const line = raw.replace(/\s+/g, '');
-      const m = line.length >= 30 && (line.match(/</g) || []).length >= 5 ? line.match(/^P[<A-Z][A-Z]{3}([A-Z<]*<<[A-Z<]*)$/) : null;
+      const m = line.length >= 30 && (line.match(/</g) || []).length >= 5 ? line.match(/^P[<A-Z][A-Z<]{3}([A-Z<]*<<[A-Z<]*)$/) : null;
       if (!m) continue;
       const [surname, given] = m[1].split('<<');
       if (!surname) continue;
@@ -186,22 +186,35 @@ export function passportNamesFrom(documents) {
 }
 
 const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+export function isIsoDate(v) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) return false;
+  const d = new Date(v + 'T00:00:00Z');
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+const pad = (n) => String(n).padStart(2, '0');
+// 2026-10-18 · 2026/10/18 · 18 Oct 2026 · October 18, 2026 · Sunday, October 18, 2026 · 18.10.2026
 function toIso(text) {
-  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return iso[0];
-  const dmy = text.match(/(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{4})/);
-  if (dmy && MONTHS[dmy[2].toLowerCase()]) return `${dmy[3]}-${String(MONTHS[dmy[2].toLowerCase()]).padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  const ymd = text.match(/(\d{4})[-/](\d{2})[-/](\d{2})/);
+  if (ymd) return `${ymd[1]}-${ymd[2]}-${ymd[3]}`;
+  const dmy = text.match(/(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\.?,?\s+(\d{4})/);
+  if (dmy && MONTHS[dmy[2].toLowerCase()]) return `${dmy[3]}-${pad(MONTHS[dmy[2].toLowerCase()])}-${pad(dmy[1])}`;
+  const mdy = text.match(/([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/);
+  if (mdy && MONTHS[mdy[1].toLowerCase()]) return `${mdy[3]}-${pad(MONTHS[mdy[1].toLowerCase()])}-${pad(mdy[2])}`;
+  const dots = text.match(/(\d{1,2})\.(\d{1,2})\.(\d{4})/);
+  if (dots) return `${dots[3]}-${pad(dots[2])}-${pad(dots[1])}`;
   return null;
 }
-// "Check-out Sun 18 Oct 2026" or "Check-out: 2026-10-18" in any attached document
+// The latest check-out date found in the included documents (two hotels → the
+// later one is what matters for coverage). Only lines that mention check-out.
 export function checkoutDateFrom(documents) {
+  let latest = null;
   for (const d of documents) {
-    const m = (d.text || '').match(/check-?out[^\n]*/i);
-    if (!m) continue;
-    const iso = toIso(m[0]);
-    if (iso) return iso;
+    for (const m of (d.text || '').matchAll(/check[\s-]?out[^\n]*/gi)) {
+      const iso = toIso(m[0]);
+      if (iso && (!latest || iso > latest)) latest = iso;
+    }
   }
-  return null;
+  return latest;
 }
 
 // Rules the consulate would apply. Each returns null, or
@@ -224,9 +237,9 @@ export const RULES = [
   {
     id: 'R2', title: 'Passport valid six months beyond departure',
     check: (f) => {
-      if (!f.passportExpires || !f.departureDate) return null;
-      const exp = new Date(f.passportExpires), dep = new Date(f.departureDate);
-      const needed = new Date(dep); needed.setMonth(needed.getMonth() + 6);
+      if (!isIsoDate(f.passportExpires) || !isIsoDate(f.departureDate)) return null;
+      const exp = new Date(f.passportExpires + 'T00:00:00Z');
+      const needed = new Date(f.departureDate + 'T00:00:00Z'); needed.setUTCMonth(needed.getUTCMonth() + 6);
       const neededIso = needed.toISOString().slice(0, 10);
       if (exp < needed) return err(`Passport expires ${f.passportExpires}, but must be valid until at least ${neededIso} (six months after ${f.departureDate}). Renew the passport before applying.`);
       const marginDays = Math.round((exp - needed) / 86400000);
@@ -270,14 +283,21 @@ export const RULES = [
       if (f.visaCategory === 'B-2' && /conference|speaker|meeting|business/i.test(f.purpose || '')) return warn('Purpose mentions business activity but category is B-2 (tourism). Conference attendance is normally B-1.');
       return null;
     }
+  },
+  {
+    id: 'R7', title: 'Travel dates in order',
+    check: (f) => {
+      if (!isIsoDate(f.arrivalDate) || !isIsoDate(f.departureDate)) return null;
+      return f.departureDate < f.arrivalDate ? err(`Departure ${f.departureDate} is before arrival ${f.arrivalDate}. Check the itinerary.`) : null;
+    }
   }
 ];
 
 export const MRV_FEE_USD = 185;
 
 export const SLOTS = [
-  { id: 'slot-1', date: '2026-09-15', time: '08:30', location: 'U.S. Embassy Kyiv — Nonimmigrant Visa Unit' },
-  { id: 'slot-2', date: '2026-09-15', time: '13:45', location: 'U.S. Embassy Kyiv — Nonimmigrant Visa Unit' },
+  { id: 'slot-1', date: '2026-09-15', time: '08:30', location: 'U.S. Consulate General Kraków' },
+  { id: 'slot-2', date: '2026-09-15', time: '13:45', location: 'U.S. Embassy Warsaw' },
   { id: 'slot-3', date: '2026-09-23', time: '10:00', location: 'U.S. Consulate General Kraków' },
   { id: 'slot-4', date: '2026-10-01', time: '09:15', location: 'U.S. Embassy Warsaw' }
 ];
@@ -306,8 +326,13 @@ export function logActivity(kind, text) {
   notify();
 }
 
+export function assertEditable() {
+  if (state.submission) throw new Error(`The application was filed as ${state.submission.reference} and can no longer be edited.`);
+}
+
 export function setField(name, value, { silent } = {}) {
-  if (!(name in FIELDS)) throw new Error(`Unknown field '${name}'`);
+  if (!Object.hasOwn(FIELDS, name)) throw new Error(`Unknown field '${name}'`);
+  assertEditable();
   state.fields[name] = value;
   if (!silent) notify();
 }
@@ -324,18 +349,18 @@ export function goToScreen(id) {
  * the whole batch can be undone. Human-only fields are refused.
  */
 export function applyChanges(updates, { note, sources = {} } = {}) {
-  if (state.submission) {
-    throw new Error(`The application was filed as ${state.submission.reference} and can no longer be edited.`);
-  }
+  assertEditable();
   const applied = [], refused = [];
   const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  for (const [field, to] of Object.entries(updates)) {
-    const spec = FIELDS[field];
+  for (const [field, raw] of Object.entries(updates)) {
+    const spec = Object.hasOwn(FIELDS, field) ? FIELDS[field] : null;
     if (!spec) { refused.push({ field, reason: 'unknown field' }); continue; }
     if (spec.humanOnly) { refused.push({ field, reason: 'must be answered by the applicant personally' }); continue; }
+    const { value: to, reason } = coerceValue(spec, raw);
+    if (reason) { refused.push({ field, reason }); continue; }
     const from = state.fields[field];
     if (String(from) === String(to)) continue;
-    state.fields[field] = String(to);
+    state.fields[field] = to;
     state.recent[field] = { source: sources[field] || null, at };
     applied.push({ field, from, to: String(to), source: sources[field] || null });
   }
@@ -344,16 +369,48 @@ export function applyChanges(updates, { note, sources = {} } = {}) {
   return { applied, refused };
 }
 
+// Only a value the form can actually show is accepted; anything else is
+// refused with a reason, like a human-only field.
+function coerceValue(spec, raw) {
+  if (raw === null || raw === undefined || typeof raw === 'object') return { reason: 'value must be a string or number' };
+  const v = String(raw).trim();
+  if (v === '') return { value: '' };
+  switch (spec.type) {
+    case 'date':
+      return isIsoDate(v) ? { value: v } : { reason: `dates must be YYYY-MM-DD (got "${v}")` };
+    case 'enum': {
+      const hit = spec.options.find((o) => o.toLowerCase() === v.toLowerCase());
+      return hit ? { value: hit } : { reason: `must be one of: ${spec.options.join(', ')}` };
+    }
+    case 'yesno': {
+      const hit = ['Yes', 'No'].find((o) => o.toLowerCase() === v.toLowerCase());
+      return hit ? { value: hit } : { reason: 'must be Yes or No' };
+    }
+    case 'number': {
+      const n = Number(v.replace(/[^\d.-]/g, ''));
+      return Number.isFinite(n) && /\d/.test(v) ? { value: String(n) } : { reason: `must be a number (got "${v}")` };
+    }
+    case 'email':
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? { value: v } : { reason: 'must be an email address' };
+    default:
+      return v.length > 2000 ? { reason: 'too long (2000 characters max)' } : { value: v };
+  }
+}
+
 export function undoLastBatch() {
+  assertEditable();
   const batch = state.lastBatch;
   if (!batch) return 0;
+  let n = 0;
   for (const { field, from } of batch.changes) {
+    if (!state.recent[field]) continue; // the applicant has since retyped it — keep theirs
     state.fields[field] = from;
     delete state.recent[field];
+    n++;
   }
   state.lastBatch = null;
   notify();
-  return batch.changes.length;
+  return n;
 }
 
 export function clearRecent(field, { silent } = {}) {
@@ -363,6 +420,7 @@ export function clearRecent(field, { silent } = {}) {
 }
 
 export function addDocument({ kind, text }) {
+  assertEditable();
   const id = 'doc-' + Math.random().toString(36).slice(2, 8);
   state.documents.push({ id, kind: kind || 'Document', text: String(text || ''), attached: false, own: true });
   state.sampleLoaded = false;
@@ -371,6 +429,7 @@ export function addDocument({ kind, text }) {
 }
 
 export function removeDocument(id) {
+  assertEditable();
   const i = state.documents.findIndex((d) => d.id === id && !d.editable);
   if (i === -1) return false;
   state.documents.splice(i, 1);
@@ -379,18 +438,21 @@ export function removeDocument(id) {
 }
 
 export function loadSampleDocuments() {
+  assertEditable();
   state.documents = SAMPLE_DOCUMENTS.map((d) => ({ ...d, attached: false }));
   state.sampleLoaded = true;
   notify();
 }
 
 export function clearDocuments() {
+  assertEditable();
   state.documents = state.documents.filter((d) => d.editable).map((d) => ({ ...d, text: '' }));
   state.sampleLoaded = false;
   notify();
 }
 
 export function setDocumentText(id, text, { silent } = {}) {
+  assertEditable();
   const doc = state.documents.find((d) => d.id === id && d.editable);
   if (!doc) return;
   doc.text = text;
@@ -398,9 +460,10 @@ export function setDocumentText(id, text, { silent } = {}) {
 }
 
 export function attachDocument(id, attached = true) {
+  assertEditable();
   const doc = state.documents.find((d) => d.id === id);
   if (!doc) throw new Error(`Unknown document '${id}'`);
-  doc.attached = attached;
+  doc.attached = attached !== false && attached !== 'false';
   notify();
   return doc;
 }

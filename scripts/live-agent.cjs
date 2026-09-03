@@ -25,7 +25,7 @@ const GATE = arg('gate', null);
 const NOTES = arg('notes', null);
 const ACCEPT = process.argv.includes('--accept');
 const SECURITY = arg('human-security', null); // 'no' answers all Part 7 questions as the applicant would
-const MAX_STEPS = 12;
+const MAX_STEPS = 26;
 
 const get = (u) => new Promise((res, rej) => {
   http.get(u, (r) => { let d = ''; r.on('data', (c) => (d += c)); r.on('end', () => res(JSON.parse(d))); }).on('error', rej);

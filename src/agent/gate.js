@@ -86,7 +86,3 @@ export function requestApproval({ title, summary, detail = [], consequence, appr
     else show(request);
   });
 }
-
-export function isGateOpen() {
-  return current !== null;
-}

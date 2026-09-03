@@ -24,9 +24,9 @@ The page registers 13 tools through `document.modelContext` — where Chrome's p
 
 Three more things the page insists on:
 
-- **`get-action-policy` first.** The tool list opens with a policy tool that names the consequential actions, explains that they will pause for approval, and lists the fields the agent must not touch. Agents that call it warn the applicant before starting; without it, agents only discover the gate by hitting it.
+- **`get-action-policy` first.** A policy tool whose description says "call this first" names the consequential actions, explains that they will pause for approval, and lists the fields the agent must not touch; every gated tool's own description also opens with an approval tag. Agents that read either warn the applicant before starting; without them, agents only discover the gate by hitting it.
 - **Human-only fields.** Part 7 (security and background) is legal declarations. `fill-fields` refuses them; the agent can explain a question but not answer it.
-- **Consular checks.** Six rules the consulate would apply — name must match the passport's machine-readable zone, passport validity, accommodation must cover the whole stay, two addresses in one field, unanswered declarations, missing petition number — with a blocking / advisory split. `submit-application` will not file while a blocking check fails, even if the applicant approves.
+- **Consular checks.** Seven rules the consulate would apply — name must match the passport's machine-readable zone, passport validity, accommodation must cover the whole stay, petition receipt for petition-based categories, unanswered declarations, purpose vs category, travel dates in order — with a blocking / advisory split. `submit-application` will not file while a blocking check fails, even if the applicant approves. The rules read the documents: the name rule looks for a machine-readable zone, the accommodation rule for a check-out date in any included document.
 
 ### Where this meets the edge of the spec
 
@@ -46,7 +46,7 @@ Then talk to the agent. A sample applicant (Maria Kovalenko, a conference speake
 
 > Fill in my application from my documents and notes, and attach every document. Tell me anything you found inconsistent.
 
-Expect: category B-1 chosen from the trip description, ~35 fields written with per-field sources, names spelled as in the passport (MARIIA, not Maria — and "Maria" filed under *Other names used*), the hotel gap flagged, and the five security questions left to you. Then:
+Expect: category B-1 chosen from the trip description, around 30 fields written with per-field sources, names spelled as in the passport (MARIIA, not Maria — and "Maria" filed under *Other names used*), the hotel gap flagged, and the five security questions left to you. Then:
 
 > Validate it, pay the fee and book the earliest interview.
 
@@ -94,4 +94,4 @@ scripts/live-agent.cjs   live-LLM test harness
 
 ## Chrome preview quirks worth knowing
 
-Observed on Chrome's `enable-webmcp-testing` build while building this: tool arguments arrive as a JSON **string**, not an object; `inputSchema` comes back stringified from `getTools()`; a second tool call issued while one is pending is rejected, which is why the gate queues; and `isError` results collapse to a generic rejection, so tools here return structured `{refused, reason}` text instead.
+Observed on Chrome's `enable-webmcp-testing` build (152.0.7977) while building this: tool arguments arrive as a JSON **string**, not an object; `inputSchema` comes back stringified from `getTools()`; `destructiveHint` is dropped from annotations while `readOnlyHint` survives; a second tool call issued while one is pending queues on 152 (earlier preview builds rejected it), so the gate queues its dialogs; and a thrown error or `isError` result collapses to a generic "invocation failed", so every tool here returns structured `{refused, reason}` text instead.

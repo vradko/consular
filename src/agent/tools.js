@@ -7,8 +7,9 @@ import { requestApproval } from './gate.js';
 
 // Chrome's WebMCP preview passes arguments as a JSON string; the spec shows an object.
 function readArgs(raw) {
-  if (typeof raw === 'string') { try { return JSON.parse(raw || '{}'); } catch { return {}; } }
-  return raw || {};
+  let args = raw;
+  if (typeof raw === 'string') { try { args = JSON.parse(raw || '{}'); } catch { args = {}; } }
+  return args && typeof args === 'object' && !Array.isArray(args) ? args : {};
 }
 const text = (v) => ({ content: [{ type: 'text', text: typeof v === 'string' ? v : JSON.stringify(v) }] });
 
@@ -25,7 +26,7 @@ function fieldCatalogue() {
   const s = getState();
   return Object.entries(FIELDS).map(([name, sp]) => ({
     name, n: sp.n, label: sp.label, screen: sp.screen, type: sp.type,
-    ...(sp.options ? { options: sp.options } : {}),
+    ...(sp.options ? { options: sp.options } : sp.type === 'yesno' ? { options: ['Yes', 'No'] } : {}),
     ...(sp.optional ? { optional: true } : {}),
     ...(sp.humanOnly ? { humanOnly: true } : {}),
     value: s.fields[name] || null
@@ -40,7 +41,7 @@ export const ACTION_POLICY = {
     { tool: 'submit-application', why: 'Files the application with the consulate. It cannot be edited or withdrawn afterwards.' }
   ],
   howApprovalWorks:
-    'The page opens a dialog in the browser showing exactly what will happen. The tool call stays pending until the applicant approves or declines there — the agent cannot skip or answer this dialog, even if the user asks it to. WebMCP has no channel yet for a page to ask the user through the chat itself (spec issue #165), so the dialog appears on the page; tell the user to look there.',
+    'The page opens a dialog in the browser showing exactly what will happen. The tool call stays pending until the applicant approves or declines there — the agent cannot skip or answer this dialog, even if the user asks it to. Never operate the dialog through browser automation: only the applicant\'s own click counts. A declined or timed-out dialog comes back as a normal result, not an error. WebMCP has no channel yet for a page to ask the user through the chat itself (spec issue #165), so the dialog appears on the page; tell the user to look there.',
   reversible: {
     tools: ['fill-fields', 'attach-document', 'go-to-screen', 'undo-last-changes'],
     why: 'These change only the draft. They run immediately; the applicant sees every field you touched highlighted with its source and can undo your last batch with one click. Do not ask for permission before using them.'
@@ -70,7 +71,7 @@ const TOOLS = [
   {
     name: 'get-application',
     description:
-      'Returns the whole application: every field with its number, screen, type, allowed options, current value and whether only the applicant may answer it; plus documents, fee, interview and submission status. Call it before proposing changes so you use the right field names and options.',
+      'Returns the whole application: every field with its number, screen, type, allowed options, current value and whether only the applicant may answer it; plus documents, fee, interview and submission status. Call it before writing so you use the right field names and options.',
     inputSchema: { type: 'object', properties: {} },
     execute: () => {
       const s = getState();
@@ -96,7 +97,7 @@ const TOOLS = [
   {
     name: 'fill-fields',
     description:
-      'Writes values into the application right away — no approval needed, this only changes the draft. Every field you set is highlighted for the applicant with the source you give, and they can undo your whole batch with one click, so pass everything you extracted at once. Use passport spelling for names. Fields marked humanOnly are refused. Dates as YYYY-MM-DD; enum fields must use one of their options.',
+      'Writes values into the application right away — no approval needed, this only changes the draft. Every field you set is highlighted for the applicant with the source you give, and they can undo your whole batch with one click, so pass everything you extracted at once. Use passport spelling for names. Refused: fields marked humanOnly, values the form cannot show (dates must be YYYY-MM-DD, enum and yesno fields one of their options, numbers numeric), and everything once the application is filed.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -152,7 +153,13 @@ const TOOLS = [
     name: 'go-to-screen',
     description: 'Shows a part of the form to the applicant so they can see what you are working on.',
     inputSchema: { type: 'object', properties: { screen: { type: 'string', enum: SCREENS.map((s) => s.id) } }, required: ['screen'] },
-    execute: (raw) => { const { screen } = readArgs(raw); goToScreen(screen); return text(`Showing part ${SCREENS.find((s) => s.id === screen).part}: ${SCREENS.find((s) => s.id === screen).title}.`); }
+    execute: (raw) => {
+      const { screen } = readArgs(raw);
+      const s = SCREENS.find((x) => x.id === screen);
+      if (!s) return text({ refused: true, reason: `Unknown screen '${screen}'. One of: ${SCREENS.map((x) => x.id).join(', ')}.` });
+      goToScreen(screen);
+      return text({ showing: `Part ${s.part}: ${s.title}` });
+    }
   },
   {
     name: 'validate-application',
@@ -196,10 +203,12 @@ const TOOLS = [
           { label: 'Amount', value: `US$${MRV_FEE_USD}.00` },
           { label: 'Payee', value: 'Consular fee service (demo)' },
           { label: 'Refundable', value: 'No' },
-          { label: 'Open issues', value: problems.length ? `${problems.length} — validation is not clean` : 'none' }
+          { label: 'Open issues', value: problems.length ? problems.map((p) => `${p.id} ${p.title}`).join('; ') : 'none — validation is clean' }
         ],
-        consequence: 'This fee is never refunded, including if the application is refused.',
-        approveLabel: `Pay US$${MRV_FEE_USD}`
+        consequence: problems.length
+          ? 'This fee is never refunded, including if the application is refused — and validation still has problems.'
+          : 'This fee is never refunded, including if the application is refused.',
+        approveLabel: problems.length ? `Pay US$${MRV_FEE_USD} anyway` : `Pay US$${MRV_FEE_USD}`
       });
       const stop = gateOutcomeText(outcome, 'The payment');
       if (stop) { logActivity(outcome, 'Fee payment not completed'); return text(stop); }
@@ -219,6 +228,8 @@ const TOOLS = [
       const { slotId } = readArgs(raw);
       const s = getState();
       if (!s.fee) return text({ blocked: true, reason: 'The application fee has not been paid. Interviews can only be scheduled after payment (pay-mrv-fee).' });
+      if (s.submission) return text({ blocked: true, reason: `The application was filed as ${s.submission.reference}; the appointment can only be changed through the consulate now.` });
+      if (s.interview?.rescheduled) return text({ blocked: true, reason: 'The interview has already been rescheduled once; no further changes are allowed.' });
       const slot = SLOTS.find((x) => x.id === slotId);
       if (!slot) return text(`No slot '${slotId}'. Call list-interview-slots.`);
       const outcome = await requestApproval({
@@ -230,7 +241,7 @@ const TOOLS = [
       });
       const stop = gateOutcomeText(outcome, 'The booking');
       if (stop) { logActivity(outcome, 'Interview not booked'); return text(stop); }
-      setInterview(slot);
+      setInterview({ ...slot, rescheduled: !!s.interview });
       logActivity('approved', `Interview — ${slot.date} ${slot.time}`);
       return text({ booked: slot, note: 'Confirmed by the applicant.' });
     }
@@ -270,7 +281,7 @@ const TOOLS = [
       const reference = `AA00${Date.now().toString(36).toUpperCase().slice(-6)}`;
       setSubmission({ reference, at: new Date().toISOString() });
       logActivity('approved', `Application filed — ${reference}`);
-      return text({ submitted: true, reference });
+      return text({ submitted: true, reference, note: 'Confirmed by the applicant.' });
     }
   }
 ];
@@ -288,12 +299,20 @@ export async function registerTools() {
       description: tool.description,
       inputSchema: tool.inputSchema,
       // MCP-style hints; harmless where the browser ignores them
-      annotations: tool.gated ? { destructiveHint: true, readOnlyHint: false } : undefined,
+      annotations: tool.gated ? { destructiveHint: true, readOnlyHint: false } : ACTION_POLICY.readOnly.includes(tool.name) ? { readOnlyHint: true } : undefined,
       execute: (args) => tool.execute(args)
     }).then(() => registered.push(tool.name))
       .catch((error) => console.warn(`Could not register '${tool.name}':`, error.message))
   ));
   return { registered, available: true, gated: TOOLS.filter((t) => t.gated).map((t) => t.name) };
+}
+
+// A thrown error would surface in Chrome as a bare "invocation failed"; make it a refusal the agent can read.
+for (const tool of TOOLS) {
+  const run = tool.execute;
+  tool.execute = async (args) => {
+    try { return await run(args); } catch (error) { return text({ refused: true, reason: error.message }); }
+  };
 }
 
 export { TOOLS };

@@ -4,9 +4,10 @@
 // where they would open the approval dialog; that part needs a browser.
 import {
   FIELDS, SCREENS, VISA_CATEGORIES, SAMPLE_DOCUMENTS, RULES,
-  getState, passportNamesFrom, checkoutDateFrom, applyChanges, undoLastBatch, setSubmission, missingRequired
+  getState, passportNamesFrom, checkoutDateFrom, applyChanges, undoLastBatch, setSubmission, missingRequired, setField, runRules
 } from '../src/state.js';
 import { TOOLS, ACTION_POLICY } from '../src/agent/tools.js';
+import { readFileSync } from 'node:fs';
 
 let passed = 0, failed = 0;
 function check(id, cond, detail = '') {
@@ -26,7 +27,7 @@ const fields = Object.entries(FIELDS);
 check('D1 field catalogue', fields.length === 42 && SCREENS.length === 9 && VISA_CATEGORIES.length === 7, `${fields.length} fields, ${SCREENS.length} screens, ${VISA_CATEGORIES.length} categories`);
 const humanOnly = fields.filter(([, s]) => s.humanOnly).map(([n]) => n);
 check('D2 human-only fields are the five security questions', humanOnly.length === 5 && humanOnly.every((n) => n.startsWith('sec')), humanOnly.join(','));
-check('D3 six consular rules', RULES.length === 6 && RULES.every((r) => /^R[1-6]$/.test(r.id)));
+check('D3 seven consular rules', RULES.length === 7 && RULES.every((r) => /^R[1-7]$/.test(r.id)));
 
 console.log('— document parsers —');
 const mrz = passportNamesFrom(SAMPLE_DOCUMENTS);
@@ -90,11 +91,29 @@ const sched = await call('schedule-interview', { slotId: 'anything' });
 check('G1 schedule-interview refuses before the fee is paid, without opening a dialog', sched.blocked === true && /fee/i.test(sched.reason));
 const sub = await call('submit-application');
 check('G2 submit-application refuses while blocked (validation, missing fields, fee, interview)', sub.blocked === true && /fee not paid/.test(sub.reason) && /no interview/.test(sub.reason), sub.reason);
-let payError = null;
-try { await call('pay-mrv-fee'); } catch (e) { payError = e; }
-check('G3 pay-mrv-fee cannot complete without the page: it opens the dialog (DOM) — in Node this throws', payError !== null && /document/.test(payError.message), payError?.message);
-check('G4 pay-mrv-fee is not blocked by validation problems — it discloses them in the dialog; the applicant decides',
-  /Open issues/.test(String(tool('pay-mrv-fee').execute)) && /validation is not clean/.test(String(tool('pay-mrv-fee').execute)));
+const pay = await call('pay-mrv-fee');
+check('G3 pay-mrv-fee cannot complete without the page: it opens the dialog (DOM) — in Node that is a refusal, not a payment', pay.refused === true && /document/.test(pay.reason), pay.reason);
+const toolsSource = readFileSync(new URL('../src/agent/tools.js', import.meta.url), 'utf8');
+check('G4 pay-mrv-fee is not blocked by validation problems — it names them in the dialog and the button says "anyway"; the applicant decides',
+  /label: 'Open issues'/.test(toolsSource) && /anyway/.test(toolsSource) && !/blockingProblems\(\)\.length\) return text/.test(toolsSource.split("name: 'pay-mrv-fee'")[1].split("name: 'schedule-interview'")[0]));
+
+console.log('— values the form cannot show are refused —');
+const bad = await call('fill-fields', { changes: { departureDate: '19/10/2026', sex: 'female', travelledBefore: 'nope', monthlyIncome: 'UAH 132,000', contactPhone: null, constructor: 'x' } });
+check('W1 day-first date refused with a reason', bad.refused?.some((r) => r.field === 'departureDate' && /YYYY-MM-DD/.test(r.reason)));
+check('W2 enum normalised to its option (female → Female)', getState().fields.sex === 'Female');
+check('W3 yesno outside Yes/No refused', bad.refused?.some((r) => r.field === 'travelledBefore'));
+check('W4 "UAH 132,000" becomes 132000', getState().fields.monthlyIncome === '132000');
+check('W5 null and prototype names refused', bad.refused?.some((r) => r.field === 'contactPhone') && bad.refused?.some((r) => r.field === 'constructor'), JSON.stringify(bad.refused?.map((r) => r.field)));
+const gts = await call('go-to-screen', { screen: 'nowhere' });
+check('W6 go-to-screen with an unknown screen is a refusal, not a throw', gts.refused === true);
+const nul = (await tool('fill-fields').execute('null')).content[0].text;
+check('W7 the argument string "null" is treated as no arguments', /No changes supplied/.test(nul), nul.slice(0, 60));
+await call('undo-last-changes');
+check('W8 R2 is computed in UTC: departure 2026-07-01, expiry 2027-01-01 is a 0-day warning in every timezone',
+  (() => { const s = getState(); s.fields.departureDate = '2026-07-01'; s.fields.passportExpires = '2027-01-01'; const r = runRules().find((x) => x.id === 'R2'); s.fields.departureDate = '2026-10-19'; s.fields.passportExpires = '2027-06-14'; return r?.severity === 'warning' && /only 0 days/.test(r.finding); })());
+check('W9 R7 flags departure before arrival', (() => { const s = getState(); s.fields.arrivalDate = '2026-10-20'; const r = runRules().find((x) => x.id === 'R7'); s.fields.arrivalDate = '2026-10-12'; return r?.severity === 'error'; })());
+check('W10 latest check-out wins with two hotels', checkoutDateFrom([{ text: 'Check-out: Oct 15, 2026' }, { text: 'Check-out Sunday, October 18, 2026' }]) === '2026-10-18');
+check('W11 German-style MRZ (P<D<<) parses', passportNamesFrom([{ text: 'P<D<<MUSTERMANN<<ERIKA<<<<<<<<<<<<<<<<<<<<<<<<<\nC01X00T478D<<6408125F2702283<<<<<<<<<<<<<<<4' }])?.surname === 'MUSTERMANN');
 
 console.log('— after filing —');
 setSubmission({ reference: 'AUDIT-TEST', at: new Date().toISOString() });
@@ -102,6 +121,14 @@ const late = await call('fill-fields', { changes: { email: 'x@y.z' } });
 check('S1 no edits after filing', late.refused === true && /filed/.test(late.reason), late.reason);
 let threw = false; try { applyChanges({ email: 'a@b.c' }); } catch { threw = true; }
 check('S2 the state layer itself refuses, not just the tool', threw);
+const lateUndo = await call('undo-last-changes');
+check('S3 undo refused after filing', lateUndo.refused === true, JSON.stringify(lateUndo).slice(0, 80));
+const lateAttach = await call('attach-document', { documentId: 'hotel', attached: false });
+check('S4 attach/detach refused after filing', lateAttach.refused === true && getState().documents.find((d) => d.id === 'hotel').attached === true);
+const lateSched = await call('schedule-interview', { slotId: 'slot-1' });
+check('S5 rescheduling refused after filing', lateSched.blocked === true || lateSched.refused === true, lateSched.reason);
+let uiThrew = false; try { setField('email', 'ui@edit.test'); } catch { uiThrew = true; }
+check('S6 the form input path refuses too', uiThrew && getState().fields.email !== 'ui@edit.test');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

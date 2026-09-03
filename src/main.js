@@ -11,19 +11,20 @@ const form = $('application-form');
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // ── field controls ──────────────────────────────────────────────────
+let filed = false;
 function control(name, spec, value, recent) {
-  const id = `f-${name}`, cls = recent ? ' recent' : '';
+  const id = `f-${name}`, cls = recent ? ' recent' : '', dis = filed ? ' disabled' : '';
   if (spec.type === 'enum') {
-    return `<select id="${id}" data-field="${name}" class="ctl${cls}"><option value="">Select…</option>${spec.options
+    return `<select id="${id}" data-field="${name}" class="ctl${cls}"${dis}><option value="">Select…</option>${spec.options
       .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
   }
   if (spec.type === 'yesno') {
     return `<div class="yesno${cls}" role="radiogroup">${['Yes', 'No'].map((o) =>
-      `<label><input type="radio" name="${name}" value="${o}" data-field="${name}"${value === o ? ' checked' : ''}> ${o}</label>`).join('')}</div>`;
+      `<label><input type="radio" name="${name}" value="${o}" data-field="${name}"${value === o ? ' checked' : ''}${dis}> ${o}</label>`).join('')}</div>`;
   }
-  if (spec.type === 'text') return `<textarea id="${id}" data-field="${name}" rows="2" class="ctl${cls}">${esc(value)}</textarea>`;
+  if (spec.type === 'text') return `<textarea id="${id}" data-field="${name}" rows="2" class="ctl${cls}"${dis}>${esc(value)}</textarea>`;
   const type = { number: 'number', date: 'date', email: 'email' }[spec.type] || 'text';
-  return `<input id="${id}" data-field="${name}" type="${type}" value="${esc(value)}" class="ctl${cls}" />`;
+  return `<input id="${id}" data-field="${name}" type="${type}" value="${esc(value)}" class="ctl${cls}"${dis} />`;
 }
 
 function srcChip(recent) {
@@ -54,7 +55,7 @@ function renderCategory(state, screen) {
     ${recent ? `<p class="muted small">Category chosen by your agent${recent.source ? ` from ${esc(recent.source)}` : ''}. Pick another card to overrule it.</p>` : ''}
     <div class="cats">${VISA_CATEGORIES.map((c) => `
       <label class="cat${chosen === c.code ? ' chosen' : ''}${recent && chosen === c.code ? ' recent' : ''}">
-        <input type="radio" name="visaCategory" value="${c.code}" data-field="visaCategory"${chosen === c.code ? ' checked' : ''}>
+        <input type="radio" name="visaCategory" value="${c.code}" data-field="visaCategory"${chosen === c.code ? ' checked' : ''}${filed ? ' disabled' : ''}>
         <span class="cat-code">${c.code}</span>
         <span class="cat-name">${esc(c.name)}</span>
         <span class="cat-sum">${esc(c.summary)}</span>
@@ -65,6 +66,7 @@ function renderCategory(state, screen) {
 }
 
 let pasteOpen = false;
+const pasteDraft = { kind: '', text: '' };
 const openDocs = new Set();
 const FILE_TYPES = '.txt,.md,.pdf,.json,.csv,.eml,text/plain,application/pdf';
 
@@ -72,6 +74,11 @@ function renderDocuments(state, screen) {
   const docs = state.documents.filter((d) => !d.editable);
   const notes = state.documents.find((d) => d.editable);
   const included = docs.filter((d) => d.attached).length;
+  if (filed) {
+    return `${screenHeader(screen, `Filed as ${esc(state.submission.reference)}. The documents below went with the application and can no longer be changed.`)}
+      <ul class="doc-attach doc-list">${docs.filter((d) => d.attached).map((d) => `<li class="on"><input type="checkbox" class="doc-check" checked disabled><details class="doc-body"><summary><span class="doc-kind">${esc(d.kind)}</span></summary><pre>${esc(d.text)}</pre></details><span class="doc-state">included</span><span></span></li>`).join('')}</ul>
+      <div class="rows notes-block"><div class="row"><label class="row-label"><span class="row-n">8.1</span><span class="row-text">Your notes</span></label><div class="row-ctl"><textarea class="ctl" rows="4" disabled>${esc(notes.text)}</textarea></div></div></div>`;
+  }
   return `${screenHeader(screen, 'Upload everything that supports this application — passport page, letters, invitations, bookings, as many as you need. Your agent reads all of them and ticks the ones to include.')}
     <div class="dropzone" data-dropzone>
       <p class="dz-text"><strong>Drop files here.</strong> Text or PDF, read in this browser — nothing is uploaded anywhere. Scans without a text layer can't be read; paste the text instead.</p>
@@ -82,8 +89,8 @@ function renderDocuments(state, screen) {
         <a class="btn btn-ghost" href="${import.meta.env.BASE_URL}sample-documents.zip" download title="Maria Kovalenko's five documents as PDFs, to try the upload path">Sample PDFs (zip)</a>
       </div>
       ${pasteOpen ? `<div class="paste-box">
-        <input type="text" class="ctl" data-paste-kind placeholder="What is it? e.g. Employer letter">
-        <textarea class="ctl" rows="6" data-paste-text placeholder="Paste the document text here"></textarea>
+        <input type="text" class="ctl" data-paste-kind placeholder="What is it? e.g. Employer letter" value="${esc(pasteDraft.kind)}">
+        <textarea class="ctl" rows="6" data-paste-text placeholder="Paste the document text here">${esc(pasteDraft.text)}</textarea>
         <div class="paste-actions"><button type="button" class="btn btn-primary" data-paste-add>Add document</button></div>
       </div>` : ''}
     </div>
@@ -138,6 +145,7 @@ function renderReview(state, screen) {
 }
 
 function renderForm(state) {
+  filed = !!state.submission;
   const screen = SCREENS.find((s) => s.id === state.screen);
   let body;
   if (screen.id === 'category') body = renderCategory(state, screen);
@@ -229,7 +237,7 @@ form.addEventListener('input', (e) => {
     // the control under the user's hand. Native controls already show their
     // state; only the category cards and the parts strip need a nudge.
     const field = t.dataset.field;
-    setField(field, t.value, { silent: true });
+    try { setField(field, t.value, { silent: true }); } catch { renderForm(getState()); return; }
     clearRecent(field, { silent: true });
     const row = t.closest('[data-row]');
     row?.querySelector('.src-chip')?.remove();
@@ -244,7 +252,12 @@ form.addEventListener('input', (e) => {
 $('undo-batch').onclick = () => logActivity('discarded', `Undid ${undoLastBatch()} change(s) by the agent`);
 
 // ── documents (Part 8): own files, pasted text, the sample ─────────
-form.addEventListener('input', (e) => { if (e.target.dataset?.notes) setDocumentText(e.target.dataset.notes, e.target.value, { silent: true }); });
+form.addEventListener('input', (e) => {
+  const t = e.target;
+  if (t.dataset?.notes) setDocumentText(t.dataset.notes, t.value, { silent: true });
+  if (t.dataset?.pasteKind !== undefined) pasteDraft.kind = t.value;
+  if (t.dataset?.pasteText !== undefined) pasteDraft.text = t.value;
+});
 form.addEventListener('change', (e) => { if (e.target.dataset?.docFiles !== undefined) { addFiles([...e.target.files]); e.target.value = ''; } });
 form.addEventListener('toggle', (e) => { const id = e.target.dataset?.openId; if (id) e.target.open ? openDocs.add(id) : openDocs.delete(id); }, true);
 form.addEventListener('click', (e) => {
@@ -260,7 +273,7 @@ form.addEventListener('click', (e) => {
     const text = form.querySelector('[data-paste-text]').value.trim();
     if (!text) return;
     const kind = form.querySelector('[data-paste-kind]').value.trim() || text.split('\n')[0].slice(0, 40);
-    pasteOpen = false;
+    pasteOpen = false; pasteDraft.kind = ''; pasteDraft.text = '';
     addDocument({ kind, text });
     logActivity('ready', `Added "${kind}" from pasted text`);
     return;
@@ -287,9 +300,14 @@ async function readFile(file) {
   return (await file.text()).trim();
 }
 
+const TEXT_LIKE = /\.(txt|md|markdown|csv|json|eml|pdf)$/i;
 async function addFiles(files) {
   for (const file of files) {
     const kind = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+    if (!TEXT_LIKE.test(file.name) && !/^text\//.test(file.type) && file.type !== 'application/pdf') {
+      logActivity('blocked', `"${file.name}" is not a text or PDF file — export it as PDF or paste the text.`);
+      continue;
+    }
     try {
       const text = await readFile(file);
       if (!text) { logActivity('blocked', `"${file.name}" has no readable text — a scan? Paste the text instead.`); continue; }
