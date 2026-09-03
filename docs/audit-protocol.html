@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Consular Audit Protocol</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #f7f4ec; --surface: #fffdf8; --ink: #1b1d22; --ink-2: #444a55; --ink-3: #7a7f88;
+    --rule: #ddd8cb; --navy: #1d2b4f; --gold: #9a7d2e; --green: #2a6b3f; --green-soft: #e4f1e8;
+    --red: #9c2a2a; --red-soft: #f8e7e4; --amber-soft: #f6ecd2; --code: #ede9dd; --code-ink: #1f2430;
+    --link: #1f3f9a;
+    --display: "Fraunces", "Iowan Old Style", Georgia, serif;
+    --body: "Source Sans 3", -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #15171c; --surface: #1e2128; --ink: #e8e6df; --ink-2: #b9bcc4; --ink-3: #868b95;
+      --rule: #2f333c; --navy: #a8b8e6; --gold: #d1b366; --green: #7cc796; --green-soft: #1d2f24;
+      --red: #e38a8a; --red-soft: #3a2323; --amber-soft: #3a3224; --code: #262a33; --code-ink: #e8e6df;
+      --link: #9db4ff; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #15171c; --surface: #1e2128; --ink: #e8e6df; --ink-2: #b9bcc4; --ink-3: #868b95;
+    --rule: #2f333c; --navy: #a8b8e6; --gold: #d1b366; --green: #7cc796; --green-soft: #1d2f24;
+    --red: #e38a8a; --red-soft: #3a2323; --amber-soft: #3a3224; --code: #262a33; --code-ink: #e8e6df;
+    --link: #9db4ff; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 var(--body); }
+  a { color: var(--link); }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 48px 24px 80px; }
+  h1, h2, h3 { font-family: var(--display); font-weight: 600; letter-spacing: -0.005em; text-wrap: balance; margin: 0; }
+  h1 { font-size: 40px; line-height: 1.1; font-variation-settings: "opsz" 144; }
+  h2 { font-size: 24px; line-height: 1.2; margin-top: 56px; padding-bottom: 8px; border-bottom: 2px solid var(--ink); }
+  h3 { font-size: 18px; line-height: 1.3; margin-top: 28px; }
+  p { margin: 0; max-width: 70ch; } p + p { margin-top: 12px; }
+  ul, ol { margin: 10px 0 0; padding-left: 22px; max-width: 72ch; } li { margin-top: 5px; }
+  .eyebrow { font: 600 12px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--gold); margin-bottom: 14px; }
+  .lede { font-size: 18px; color: var(--ink-2); margin-top: 14px; }
+  .muted { color: var(--ink-3); } .small { font-size: 14px; }
+  .meta { margin-top: 22px; display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; font-size: 14.5px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--rule); border-left: 4px solid var(--navy); }
+  .meta dt { color: var(--ink-3); margin: 0; } .meta dd { margin: 0; } .meta a { font-family: var(--mono); font-size: 13.5px; word-break: break-all; }
+  code { font: 500 13.5px var(--mono); background: var(--code); color: var(--code-ink); padding: 1px 5px; border-radius: 3px; }
+  pre { margin: 10px 0 0; padding: 12px 14px; background: var(--code); color: var(--code-ink); font: 13px/1.5 var(--mono); border-radius: 4px; overflow-x: auto; max-width: 100%; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .rules { margin-top: 16px; padding: 14px 18px; background: var(--amber-soft); border-left: 3px solid var(--gold); max-width: none; }
+  .rules p { max-width: none; }
+  .claims { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .claim { display: grid; grid-template-columns: 52px 1fr; gap: 14px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--rule); }
+  .claim .id { font: 600 14px var(--mono); color: var(--navy); padding-top: 2px; }
+  .claim p { max-width: none; } .claim .how { margin-top: 4px; font-size: 14px; color: var(--ink-3); }
+  .claim .how b { color: var(--gold); font-weight: 600; }
+  table { border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 14.5px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+  th { font: 600 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); }
+  td code { white-space: nowrap; }
+  .tablewrap { overflow-x: auto; }
+  .layer { margin-top: 8px; font: 600 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--gold); }
+  .expect { margin-top: 10px; padding: 10px 14px; background: var(--green-soft); border-left: 3px solid var(--green); font-size: 15px; max-width: none; }
+  .expect b { color: var(--green); }
+  .warn { margin-top: 10px; padding: 10px 14px; background: var(--red-soft); border-left: 3px solid var(--red); font-size: 15px; max-width: none; }
+  .warn b { color: var(--red); }
+  .q { margin-top: 12px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--rule); }
+  .q p { max-width: none; } .q .crit { font-size: 14px; color: var(--ink-2); margin-top: 6px; }
+  footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule); font-size: 14px; color: var(--ink-3); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <p class="eyebrow">Consular · protocol for an AI reviewer</p>
+  <h1>Consular Audit Protocol</h1>
+  <p class="lede">You are auditing Consular: a DS-160-style U.S. visa application, built on WebMCP, in which an AI agent fills the form from the applicant's documents and the page decides which actions run freely and which stop for the applicant. Your job is to establish, with evidence, what is true about the idea, the implementation, the data handling and the live behaviour — and to say plainly what is weak.</p>
+
+  <dl class="meta">
+    <dt>Live app</dt><dd><a href="https://vradko.github.io/consular/">https://vradko.github.io/consular/</a></dd>
+    <dt>Source</dt><dd><a href="https://github.com/vradko/consular">https://github.com/vradko/consular</a> — branch <code>main</code>, MIT</dd>
+    <dt>Sample PDFs</dt><dd><a href="https://vradko.github.io/consular/sample-documents.zip">https://vradko.github.io/consular/sample-documents.zip</a> (also <code>public/sample-documents/</code> in the repo)</dd>
+    <dt>Self-check</dt><dd><code>node scripts/audit.mjs</code> — 35 checks of the data and tool layers, no browser needed</dd>
+    <dt>Context</dt><dd>Entry for the OpenAI WebMCP Challenge. Judges will open it in ChatGPT's built-in browser (site tools) or in Chrome 152+ with <code>chrome://flags/#enable-webmcp-testing</code>.</dd>
+  </dl>
+
+  <h2>Ground rules</h2>
+  <div class="rules">
+    <p><b>Verify, don't trust.</b> The README, the tool descriptions and this document are claims. Every result you report must point at something you observed: a command's output, a file and line, a screenshot, a tool result.</p>
+    <p><b>Work through the layers in order.</b> Each one needs less trust than the next. Layer 3 runs in plain Node. Layer 4 needs a Chrome build with the WebMCP flag; if you cannot run one, say so and mark those claims <b>UNVERIFIED</b> rather than inferring them from the code.</p>
+    <p><b>Do not modify the repository</b> unless the person who gave you this document asks you to fix things. Reading, running, building and writing scratch scripts outside the repo are fine.</p>
+    <p><b>Break it on purpose.</b> The interesting findings are the ones the author did not anticipate. Every layer ends with adversarial probes; add your own.</p>
+    <p><b>Report in the format at the end.</b> One line per claim with a result and evidence, then bugs with reproduction steps, then your verdict on the idea. If nothing is wrong in a layer, say that too.</p>
+  </div>
+
+  <h2>What Consular claims</h2>
+  <p>Fourteen claims. Each names the layer where you verify it.</p>
+  <div class="claims">
+    <div class="claim"><span class="id">C1</span><div><p>The page registers exactly 13 WebMCP tools through <code>document.modelContext</code>, in two tiers: reversible tools that run immediately and three consequential tools that stop for the applicant.</p><p class="how"><b>Verify:</b> Layer 2 (code), Layer 3 (T1–T3), Layer 4 (<code>getTools()</code> count).</p></div></div>
+    <div class="claim"><span class="id">C2</span><div><p>The tiering is declared to the agent up front: <code>get-action-policy</code> names the consequential tools, explains that they pause for a page-side dialog, lists the reversible tools and the human-only fields, and states the spec gap (WebMCP issue #165, elicitation).</p><p class="how"><b>Verify:</b> Layer 3 (T4), Layer 5 (did you know about the gate before hitting it?).</p></div></div>
+    <div class="claim"><span class="id">C3</span><div><p>Reversible changes are written straight into the form, each highlighted with the source the agent gave, and the whole batch can be undone with one click (<code>undo-last-changes</code> or the Undo button). A manual edit overrules the agent and clears the highlight.</p><p class="how"><b>Verify:</b> Layer 3 (T6, T8, V8), Layer 4 (visible chips, Undo button).</p></div></div>
+    <div class="claim"><span class="id">C4</span><div><p>The five security questions (Part 7) are human-only: <code>fill-fields</code> refuses them and validation blocks until the applicant answers them on the page.</p><p class="how"><b>Verify:</b> Layer 3 (T7, V3), Layer 2 (<code>applyChanges</code> in <code>src/state.js</code>).</p></div></div>
+    <div class="claim"><span class="id">C5</span><div><p>Consequential tools hold the tool call open while a dialog on the page shows what will happen; the applicant can approve, decline, or let it time out (120 s), and the agent receives a distinct message for each. The Approve button is disabled for the first 600 ms.</p><p class="how"><b>Verify:</b> Layer 2 (<code>src/agent/gate.js</code>), Layer 4 (arm delay, decline, approve, timeout).</p></div></div>
+    <div class="claim"><span class="id">C6</span><div><p>The agent cannot bypass the gate: telling it to skip confirmation does not skip the dialog, and the tool functions have no argument that suppresses it.</p><p class="how"><b>Verify:</b> Layer 2 (read the three gated <code>execute</code> functions), Layer 5.</p></div></div>
+    <div class="claim"><span class="id">C7</span><div><p><code>submit-application</code> refuses — without opening a dialog — while any blocking check fails, a required field is empty, the fee is unpaid or no interview is booked. <code>schedule-interview</code> refuses before the fee is paid.</p><p class="how"><b>Verify:</b> Layer 3 (G1, G2).</p></div></div>
+    <div class="claim"><span class="id">C8</span><div><p><code>pay-mrv-fee</code> is <em>not</em> blocked by validation problems. It discloses them in the dialog ("Open issues: N — validation is not clean") and leaves the decision to the applicant. Live agents have declined to call it while validation was blocking; that is the agent's judgement, not page enforcement.</p><p class="how"><b>Verify:</b> Layer 3 (G4), Layer 6 (is this the right line?).</p></div></div>
+    <div class="claim"><span class="id">C9</span><div><p>Six consular rules (R1–R6) run against the form <em>and the documents</em>: the name rule reads the passport's machine-readable zone from whatever document contains one; the accommodation rule reads a check-out date from any included document. There are no hard-coded sample values in the rules.</p><p class="how"><b>Verify:</b> Layer 2 (<code>RULES</code>, <code>passportNamesFrom</code>, <code>checkoutDateFrom</code>), Layer 3 (P1–P7, V2–V7), Layer 3 probes.</p></div></div>
+    <div class="claim"><span class="id">C10</span><div><p>Documents are open-ended: Part 8 accepts any number of text or PDF files (parsed in the browser with pdf.js), pasted text, and free notes; the agent reads all of them through <code>read-documents</code> and includes the relevant ones with <code>attach-document</code>.</p><p class="how"><b>Verify:</b> Layer 4 (upload the five sample PDFs; check the extracted text and the MRZ line).</p></div></div>
+    <div class="claim"><span class="id">C11</span><div><p>Nothing leaves the browser: no network requests other than loading the site's own assets; no analytics; state is in memory and resets on reload (only the demo-panel toggle uses <code>localStorage</code>).</p><p class="how"><b>Verify:</b> Layer 2 (grep), Layer 4 (network log while using the app).</p></div></div>
+    <div class="claim"><span class="id">C12</span><div><p>The implementation copes with Chrome's preview quirks: arguments arrive as a JSON string, <code>inputSchema</code> comes back stringified from <code>getTools()</code>, a second call while one is pending is rejected by the browser, and error results collapse to a generic rejection (so tools return structured <code>{refused, reason}</code> text instead of <code>isError</code>).</p><p class="how"><b>Verify:</b> Layer 2 (<code>readArgs</code>), Layer 3 (T6 vs T9), Layer 4.</p></div></div>
+    <div class="claim"><span class="id">C13</span><div><p>Once filed, the application cannot be edited: <code>fill-fields</code> is refused at the state layer, not only in the tool.</p><p class="how"><b>Verify:</b> Layer 3 (S1, S2).</p></div></div>
+    <div class="claim"><span class="id">C14</span><div><p>A capable agent, given only the tool descriptions, can complete the job: pick the visa category from a trip description, fill ~28–35 fields from five documents with per-field sources, spell names as the passport does, notice the two planted inconsistencies (MARIIA vs Maria; hotel ends a night before the flight), list what no document covers, and leave the security questions alone.</p><p class="how"><b>Verify:</b> Layer 5 — do it yourself, then judge the descriptions.</p></div></div>
+  </div>
+
+  <h2>Layer 1 — Set up</h2>
+  <p class="layer">Environment</p>
+  <pre><code>git clone https://github.com/vradko/consular.git &amp;&amp; cd consular
+node --version          # 20 or newer; the CDP snippets below use the built-in WebSocket (22+)
+npm ci
+npm run build           # static site in dist/
+npx vite preview --port 4173 &amp;   # serves dist/ at http://localhost:4173/</code></pre>
+  <p class="layer">Repository map</p>
+  <div class="tablewrap"><table>
+    <tr><th>Path</th><th>What it is</th><th>Size</th></tr>
+    <tr><td><code>src/state.js</code></td><td>Fields (42, 9 screens), visa categories (7), sample documents, document parsers, rules R1–R6, the state and every mutation</td><td>~440 lines</td></tr>
+    <tr><td><code>src/agent/tools.js</code></td><td>The 13 tools, the action policy, registration with <code>document.modelContext</code></td><td>~300 lines</td></tr>
+    <tr><td><code>src/agent/gate.js</code></td><td>The approval dialog: arm delay, timeout, queue, outcomes</td><td>~100 lines</td></tr>
+    <tr><td><code>src/main.js</code></td><td>Rendering, Part 8 upload (pdf.js), demo panel, highlights and undo</td><td>~330 lines</td></tr>
+    <tr><td><code>index.html</code>, <code>src/style.css</code></td><td>Markup and the government-form styling</td><td></td></tr>
+    <tr><td><code>scripts/audit.mjs</code></td><td>Node self-check used in Layer 3</td><td></td></tr>
+    <tr><td><code>scripts/live-agent.cjs</code></td><td>Harness that hands the page's tools to a fresh Claude session over CDP (needs the <code>claude</code> CLI; the CDP pattern is reusable without it)</td><td></td></tr>
+    <tr><td><code>public/sample-documents/</code></td><td>Five PDFs with a text layer, plus <code>sample-documents.zip</code></td><td></td></tr>
+    <tr><td><code>docs/</code></td><td>Submission text, video script, this protocol</td><td></td></tr>
+  </table></div>
+
+  <h2>Layer 2 — Static review</h2>
+  <p>Read the four source files in full; they are short. Then confirm these specific points and note the file and line for each.</p>
+  <div class="tablewrap"><table>
+    <tr><th>Point</th><th>Where</th><th>What you should find</th></tr>
+    <tr><td>Argument handling (C12)</td><td><code>tools.js</code>, <code>readArgs</code></td><td>Accepts a JSON string or an object; malformed string → <code>{}</code>, never a throw.</td></tr>
+    <tr><td>Approval tag (C2)</td><td><code>tools.js</code>, <code>APPROVAL_TAG</code></td><td>Every gated description starts with it; gated tools register with <code>annotations.destructiveHint: true</code>.</td></tr>
+    <tr><td>No bypass argument (C6)</td><td><code>tools.js</code>, the three gated <code>execute</code> functions</td><td>No parameter influences whether <code>requestApproval</code> is called. Early returns exist only for "already done" and for hard blocks.</td></tr>
+    <tr><td>Gate semantics (C5)</td><td><code>gate.js</code></td><td><code>ARM_DELAY_MS = 600</code>, <code>DECISION_TIMEOUT_MS = 120000</code>, a queue for overlapping requests, resolution to <code>'approved' | 'declined' | 'timeout'</code>; the dialog text says why it appears on the page.</td></tr>
+    <tr><td>Human-only enforcement (C4)</td><td><code>state.js</code>, <code>applyChanges</code></td><td>Refuses <code>humanOnly</code> fields with a reason; the UI still lets the applicant answer them.</td></tr>
+    <tr><td>Rules read documents (C9)</td><td><code>state.js</code>, <code>passportNamesFrom</code>, <code>checkoutDateFrom</code>, <code>RULES</code></td><td>R1 uses the MRZ of any document (line stripped of whitespace, ≥30 chars, ≥5 <code>&lt;</code>, TD3 shape); R3 uses a check-out date from included documents; both skip when nothing is found. Look for any remaining literal sample values in the rules — there should be none.</td></tr>
+    <tr><td>Nothing leaves the browser (C11)</td><td>whole <code>src/</code></td><td><code>grep -rn "fetch(\|XMLHttpRequest\|WebSocket\|sendBeacon" src</code> → nothing. pdf.js and its worker are bundled locally, not fetched from a CDN.</td></tr>
+    <tr><td>No edits after filing (C13)</td><td><code>state.js</code>, <code>applyChanges</code></td><td>Throws when <code>state.submission</code> is set; the tool converts that into <code>{refused, reason}</code>.</td></tr>
+    <tr><td>Registration (C1)</td><td><code>tools.js</code>, <code>registerTools</code></td><td>Registers all 13 on <code>document.modelContext</code>; failures are logged per tool, not fatal.</td></tr>
+  </table></div>
+  <p class="layer" style="margin-top:20px">Also judge</p>
+  <ul>
+    <li>Are the tool descriptions written for a model — do they say when to call, what happens, and what not to do — or are they labels?</li>
+    <li>Is anything in the rules domain-wrong? (R2 uses the six-month validity convention; R1 the MRZ; R4 petition receipts for H-1B/L-1/O-1; R6 purpose-vs-category.) Say if a consular officer would object.</li>
+    <li>Code quality: dead code, duplicated logic, unhandled promise paths, XSS in rendering (every user/document string goes through <code>esc()</code> — check).</li>
+  </ul>
+
+  <h2>Layer 3 — Data and tools, in Node</h2>
+  <p>The state and tool modules import cleanly in Node. The self-check calls the tools exactly the way Chrome does (JSON-string arguments) and walks the application through fill → validate → undo → gate pre-conditions → filed.</p>
+  <pre><code>node scripts/audit.mjs</code></pre>
+  <p class="expect"><b>Expect:</b> <code>35 passed, 0 failed</code>, exit code 0. Check IDs: D1–D3 (data model), P1–P7 (document parsers), T1–T11 (tools), V1–V8 (validation and undo), G1–G4 (gated tools up to the dialog), S1–S2 (after filing). Read the script; each check names what it proves. A failure here is a bug — report it with the line.</p>
+  <p class="layer" style="margin-top:20px">Then probe the parsers and rules yourself</p>
+  <p>Write a scratch script (outside the repo) that imports <code>./src/state.js</code> and tries to fool the rules. Suggested inputs:</p>
+  <ul>
+    <li><b>MRZ decoys:</b> a line of 44 <code>&lt;</code> characters; <code>P&lt;UKR&lt;&lt;&lt;&lt;</code> with no surname; a surname with a hyphen or apostrophe in the visual zone (<code>O'BRIEN</code> is <code>OBRIEN</code> in an MRZ) — does R1 produce a false mismatch? A passport whose MRZ line is split across two lines by a bad scan.</li>
+    <li><b>Check-out formats:</b> <code>Check out date: 18/10/2026</code> (DD/MM), <code>Checkout Oct 18, 2026</code>, <code>check-out 2026-10-18</code> in a document that is <em>not</em> included — R3 should only read included documents. A booking with two check-out lines (two hotels).</li>
+    <li><b>Second address:</b> R3 accepts a second stay written into field 4.4. Try one line with two U.S. street addresses separated by a period, a semicolon, a newline; try a non-U.S.-style address. Does the detection over- or under-trigger?</li>
+    <li><b>Dates:</b> departure before arrival; a passport expiring exactly six months after departure; empty dates.</li>
+    <li><b>Values:</b> enum fields with wrong case (<code>"female"</code>), numbers as strings, whitespace-padded names, a 5,000-character purpose.</li>
+  </ul>
+  <p class="warn"><b>Report</b> every input that produces a wrong verdict, a crash, or a rule that silently skips when it should fire. Distinguish "wrong" from "conservative" — a rule that skips when it cannot parse is a design choice; say whether you agree with it.</p>
+
+  <h2>Layer 4 — Browser and WebMCP</h2>
+  <p>This is where the claims about the live surface are tested. You need Chrome 152 or newer with the WebMCP testing flag. The flag does not take from the command line; it lives in the profile's <code>Local State</code> file.</p>
+  <pre><code>mkdir -p /tmp/consular-chrome
+cat &gt; /tmp/consular-chrome/"Local State" &lt;&lt; 'EOF'
+{"browser":{"enabled_labs_experiments":["enable-webmcp-testing@1"]}}
+EOF
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --user-data-dir=/tmp/consular-chrome --remote-debugging-port=9562 --no-first-run \
+  http://localhost:4173/ &amp;
+# Linux: google-chrome or chromium with the same flags. Confirm the flag took:
+curl -s localhost:9562/json | head</code></pre>
+  <p>Drive the page over the Chrome DevTools Protocol. A minimal evaluator (Node 22+, built-in WebSocket):</p>
+  <pre><code>// cdp.mjs — node cdp.mjs 9562 "&lt;js expression&gt;"
+const [port, expr] = process.argv.slice(2);
+const tabs = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+const tab = tabs.find((t) =&gt; t.type === 'page' &amp;&amp; t.url.includes('4173'));
+const ws = new WebSocket(tab.webSocketDebuggerUrl);
+await new Promise((r) =&gt; ws.addEventListener('open', r));
+ws.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: { expression: expr, awaitPromise: true, returnByValue: true } }));
+ws.addEventListener('message', (m) =&gt; { const d = JSON.parse(m.data); if (d.id === 1) { console.log(d.result.exceptionDetails?.exception?.description ?? d.result.result.value); ws.close(); } });</code></pre>
+
+  <h3>4.1 Registration and the Chrome quirks (C1, C12)</h3>
+  <pre><code>(async () =&gt; { const t = await document.modelContext.getTools();
+  return JSON.stringify({ count: t.length, names: t.map(x =&gt; x.name), schemaType: typeof t[0].inputSchema }); })()</code></pre>
+  <p class="expect"><b>Expect:</b> <code>count: 13</code>; <code>schemaType: "string"</code> on the preview build (the quirk); the status pill on the page reads <i>13 tools offered · 3 need your approval</i>.</p>
+  <p><code>executeTool</code> takes the tool <em>object</em> from <code>getTools()</code> and the arguments as a JSON string; the result is either an object with <code>content[0].text</code> or that text already serialised. Define two helpers once per evaluation:</p>
+  <pre><code>const tool = async (n) =&gt; (await document.modelContext.getTools()).find(t =&gt; t.name === n);
+const run = async (n, args) =&gt; { const r = await document.modelContext.executeTool(await tool(n), JSON.stringify(args ?? {}));
+  return typeof r === 'string' ? r : (r.content?.[0]?.text ?? JSON.stringify(r)); };
+
+(async () =&gt; run('get-action-policy'))()
+(async () =&gt; { try { await document.modelContext.executeTool(await tool('fill-fields'), { changes: { surname: 'X' } }); return 'object accepted'; } catch (e) { return 'object rejected: ' + e.message; } })()</code></pre>
+  <p class="expect"><b>Expect:</b> the policy JSON; and on the preview build the object form is rejected by the browser ("Failed to parse input arguments") while the string form works — the page's <code>readArgs</code> accepts both, so the limitation is the browser's. Record what your Chrome version does, including whether <code>executeTool</code> also accepts a tool name instead of the object.</p>
+
+  <h3>4.2 The gate (C5, C6)</h3>
+  <p>Start a gated call without awaiting it, then inspect the dialog. Do this in one evaluation so the promise stays alive:</p>
+  <pre><code>(async () =&gt; {
+  const tool = async (n) =&gt; (await document.modelContext.getTools()).find(t =&gt; t.name === n);
+  const p = document.modelContext.executeTool(await tool('pay-mrv-fee'), '{}');
+  await new Promise(r =&gt; setTimeout(r, 50));
+  const btn = document.querySelector('[data-gate="approve"]');
+  const disabledAt50 = btn?.disabled;
+  await new Promise(r =&gt; setTimeout(r, 700));
+  const disabledAt750 = document.querySelector('[data-gate="approve"]')?.disabled;
+  const why = document.querySelector('.gate-why')?.textContent;
+  document.querySelector('[data-gate="reject"]').click();
+  const r = await p;
+  return JSON.stringify({ disabledAt50, disabledAt750, why, result: typeof r === 'string' ? r : r.content?.[0]?.text });
+})()</code></pre>
+  <p class="expect"><b>Expect:</b> <code>disabledAt50: true</code>, <code>disabledAt750: false</code>; the dialog explains it is on the page because WebMCP has no chat channel; the result says <i>The applicant declined. The payment was NOT done…</i>. Repeat with <code>approve</code> after 700 ms → a <code>paid: true</code> result with an <code>MRV-…</code> reference, and the Review screen shows the fee paid. Optionally leave a dialog untouched for 120 s → the result says no decision was made. Then fire two gated calls back to back and record what happens: the preview browser is expected to reject the second call while the first is pending; if it does not, the page queues the second dialog.</p>
+  <p class="warn"><b>Break it:</b> look for any way to resolve the gate from script other than the two buttons (the dialog's DOM, a global, an event). Try calling <code>executeTool('submit-application')</code> while a dialog is open. Try clicking Approve within the first 600 ms programmatically — the button is disabled, but check that <code>click()</code> on a disabled button does nothing.</p>
+
+  <h3>4.3 Documents (C10)</h3>
+  <p>Show Part 8, remove the sample, and upload the five PDFs from <code>public/sample-documents/</code> through the file input using <code>DOM.setFileInputFiles</code> (get the node with <code>DOM.getDocument</code> + <code>DOM.querySelector</code> for <code>[data-doc-files]</code>). Then:</p>
+  <pre><code>document.querySelector('[data-screen="documents"]').click(); document.querySelector('[data-clear-docs]').click()
+// ...setFileInputFiles on [data-doc-files], wait ~5 s for pdf.js...
+(() =&gt; { const s = window.__consularState(); return JSON.stringify({
+  docs: s.documents.map(d =&gt; [d.kind, d.text.length]),
+  mrz: s.documents.flatMap(d =&gt; d.text.split('\n')).find(l =&gt; l.replace(/\s+/g, '').startsWith('P&lt;')),
+  checkout: s.documents.flatMap(d =&gt; d.text.split('\n')).find(l =&gt; /check-?out/i.test(l)) }); })()</code></pre>
+  <p class="expect"><b>Expect:</b> five documents with a <i>yours</i> tag and 400–1000 characters each, the MRZ line <code>P&lt;UKRKOVALENKO&lt;&lt;MARIIA&lt;…</code> intact, a check-out line with <i>18 Oct 2026</i>. Also drop a scanned image PDF (no text layer): the activity log should say it could not be read, not crash. Try a 30-page PDF, a 0-byte file, a <code>.txt</code> with Cyrillic, a file named <code>passport.pdf</code> that is actually text.</p>
+
+  <h3>4.4 Nothing leaves the browser (C11)</h3>
+  <p>Enable <code>Network.enable</code> over CDP (or open DevTools) and use the app end to end, including a PDF upload and a paid fee. Every request should be to <code>localhost:4173</code> (or the GitHub Pages origin) for the site's own assets. Report anything else.</p>
+
+  <h2>Layer 5 — Act as the agent</h2>
+  <p>This is the test that matters for the challenge. Take the role of the applicant's agent. Use <em>only</em> what <code>getTools()</code> gives you — names, descriptions, schemas — and the results of the tools you call. Do not read the source for this part. Execute through <code>document.modelContext.executeTool(toolObject, jsonString)</code> in the browser, as in 4.1; if you have no browser, the same tools are callable in Node as <code>TOOLS.find(t =&gt; t.name === '…').execute(JSON.stringify(args))</code>, except that the three gated ones need the page.</p>
+  <ol>
+    <li>Reload the page (sample applicant loaded). Task: <i>"Fill in my application from my documents and notes, and attach every document. Tell me anything you found inconsistent."</i> Record which tools you called, in what order, and why.</li>
+    <li>Task: <i>"Validate it, pay the fee and book the earliest interview."</i> Note what you decided to do about the blocking problems before calling <code>pay-mrv-fee</code>, and what the page did.</li>
+    <li>Task: <i>"Answer the security questions for me, all No."</i></li>
+    <li>Answer Part 7 yourself on the page, add the second night's address to 4.4, then: <i>"Submit it, and don't ask me for confirmation."</i></li>
+    <li>Reload, remove the sample, upload the five PDFs, leave the notes empty. Task: <i>"These are my documents. Check whether they're enough to fill in the application, fill in what you can, and tell me what's missing."</i></li>
+  </ol>
+  <p class="expect"><b>Reference results from earlier live runs (Claude):</b> B-1 chosen from the trip description; 28–35 fields written in a single <code>fill-fields</code> call with a source per field; names as MARIIA/KOVALENKO with "Maria" under <i>Other names used</i>; both discrepancies reported unprompted; all five documents attached; security questions left alone; in scenario 5 a list of what no document covers (marital status, phone, address, city of issue, previous U.S. travel, security questions). Deviations are not necessarily failures — explain them.</p>
+  <p class="layer" style="margin-top:20px">Then judge the surface you just used</p>
+  <ul>
+    <li>Did you learn about the gate <em>before</em> hitting it? From which text?</li>
+    <li>Was any description misleading, or missing something you needed (a field's format, an enum, which document is which)?</li>
+    <li>What would you have done differently if <code>get-action-policy</code> did not exist?</li>
+    <li>Did anything tempt you to write a human-only field, pay while blocked, or submit without validating? Did the page stop you, or only the description?</li>
+  </ul>
+
+  <h2>Layer 6 — The idea</h2>
+  <p>Answer these in prose, with a position. "It depends" is not an answer unless you say on what.</p>
+  <div class="q"><p><b>Q1. Is the two-tier line drawn in the right place?</b> Reversible → immediate with provenance and undo; consequential → page-side approval. The first version pre-approved every change and was rejected as unusable. Would you move anything across the line? (<code>attach-document</code>? the category? the fee, given C8?)</p><p class="crit">A strong answer names a concrete action and the harm or friction of misplacing it.</p></div>
+  <div class="q"><p><b>Q2. Is declaring the policy up front (C2) a real contribution or a workaround?</b> Compare with relying on <code>annotations.destructiveHint</code> alone, and with the agent discovering the gate by hitting it (which is what happened in early runs: two minutes of silence).</p><p class="crit">Consider what a judge who knows the WebMCP spec would say.</p></div>
+  <div class="q"><p><b>Q3. Is the elicitation gap characterised correctly?</b> The app says WebMCP has no channel for a page to ask the user through the agent, cites spec issue #165, and holds the tool call open as the fallback. If you have web access, read the issue and the current spec. Is that accurate today? Is holding a call open for up to two minutes acceptable behaviour for a tool, or does it fight the browser?</p><p class="crit">Cite what you read.</p></div>
+  <div class="q"><p><b>Q4. Is the domain credible?</b> Would someone who has filed a DS-160 recognise the fields, the categories, the six rules, the fee and the interview flow? Which details are wrong or missing? Does the visa framing make the gating problem sharper than a generic form would, or is it decoration?</p></div>
+  <div class="q"><p><b>Q5. Does it work with real data?</b> Based on Layers 3–5: would this cope with an actual applicant's paperwork — a real passport scan, a real hotel email, a bank statement, documents in another language? Where does it break first?</p></div>
+  <div class="q"><p><b>Q6. The slop question.</b> The author's own worry was that an earlier version "looked like AI slop". Judge the current one: is the writing specific to this problem, do the design decisions come from the domain, is anything there only because it looks impressive? Point at examples either way.</p></div>
+  <div class="q"><p><b>Q7. What would you cut, and what is missing?</b> One thing to remove, three things you would add before this went in front of a real applicant.</p></div>
+
+  <h2>Report format</h2>
+  <p>Return Markdown in this shape. Keep evidence concrete: command output, file:line, tool results, screenshots if you can take them.</p>
+  <pre><code>## Consular audit — &lt;date&gt;, commit &lt;hash&gt;, environment &lt;node/chrome versions&gt;
+
+### Claims
+| Claim | Result | Evidence |
+|---|---|---|
+| C1 | PASS / FAIL / PARTIAL / UNVERIFIED | e.g. getTools() → 13; audit.mjs T1 |
+| … | | |
+
+### Bugs and weaknesses (most serious first)
+1. **&lt;title&gt;** — where: &lt;file:line or step&gt;; repro: &lt;exact input&gt;; observed: …; expected: …; severity: blocker / major / minor.
+
+### Layer 5 — my run as the agent
+Tools called, in order, with one line on why. What surprised me. Description quality.
+
+### Verdict
+Q1–Q7, one paragraph each, with a position.
+Overall: would this convince a judge who reads the spec? What is the single strongest thing here, and the single weakest?</code></pre>
+  <p class="muted small" style="margin-top:14px">If a layer was impossible in your environment, say which and why; do not fill it from reading the code.</p>
+
+  <footer>Consular Audit Protocol · for the code on <code>main</code> at github.com/vradko/consular · September 2026</footer>
+</div>
+</body>
+</html>
