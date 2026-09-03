@@ -108,9 +108,9 @@ export const FIELDS = {
   secOverstay: { screen: 'security', n: '7.5', label: 'Have you ever overstayed a visa or been deported from any country?', type: 'yesno', humanOnly: true }
 };
 
-// The "pile": everything the applicant already has, as an agent would read it.
+// The sample applicant: everything Maria already has, as an agent would read it.
 // Three discrepancies are planted on purpose — see rules below.
-export const DOCUMENTS = [
+export const SAMPLE_DOCUMENTS = [
   {
     id: 'passport', kind: 'Passport — biographic page (OCR)',
     text: `TYPE P  CODE UKR  PASSPORT No FE882140
@@ -169,6 +169,41 @@ Billed to: Noltic LLC`
   }
 ];
 
+// Read the passport's machine-readable zone: P<UKRKOVALENKO<<MARIIA<<<<
+export function passportNamesFrom(documents) {
+  for (const d of documents) {
+    for (const raw of (d.text || '').split('\n')) {
+      // TD3 line 1: P, type, 3-letter country, SURNAME<<GIVEN<NAMES, padded with <
+      const line = raw.replace(/\s+/g, '');
+      const m = line.length >= 30 && (line.match(/</g) || []).length >= 5 ? line.match(/^P[<A-Z][A-Z]{3}([A-Z<]*<<[A-Z<]*)$/) : null;
+      if (!m) continue;
+      const [surname, given] = m[1].split('<<');
+      if (!surname) continue;
+      return { surname: surname.replace(/</g, ' ').trim(), given: (given || '').replace(/</g, ' ').trim() };
+    }
+  }
+  return null;
+}
+
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+function toIso(text) {
+  const iso = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return iso[0];
+  const dmy = text.match(/(\d{1,2})\s+([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{4})/);
+  if (dmy && MONTHS[dmy[2].toLowerCase()]) return `${dmy[3]}-${String(MONTHS[dmy[2].toLowerCase()]).padStart(2, '0')}-${dmy[1].padStart(2, '0')}`;
+  return null;
+}
+// "Check-out Sun 18 Oct 2026" or "Check-out: 2026-10-18" in any attached document
+export function checkoutDateFrom(documents) {
+  for (const d of documents) {
+    const m = (d.text || '').match(/check-?out[^\n]*/i);
+    if (!m) continue;
+    const iso = toIso(m[0]);
+    if (iso) return iso;
+  }
+  return null;
+}
+
 // Rules the consulate would apply. Each returns null, or
 // { severity: 'error' | 'warning', finding }. Errors block submission.
 const err = (finding) => ({ severity: 'error', finding });
@@ -177,11 +212,12 @@ const warn = (finding) => ({ severity: 'warning', finding });
 export const RULES = [
   {
     id: 'R1', title: 'Names must match the passport exactly',
-    check: (f) => {
-      const passportGiven = 'MARIIA', passportSurname = 'KOVALENKO';
+    check: (f, s) => {
+      const mrz = passportNamesFrom(s.documents);
+      if (!mrz) return null; // no machine-readable passport among the documents
       const bad = [];
-      if (f.givenNames && f.givenNames.trim().toUpperCase() !== passportGiven) bad.push(`given names "${f.givenNames}" vs passport "${passportGiven}"`);
-      if (f.surname && f.surname.trim().toUpperCase() !== passportSurname) bad.push(`surname "${f.surname}" vs passport "${passportSurname}"`);
+      if (f.givenNames && f.givenNames.trim().toUpperCase() !== mrz.given) bad.push(`given names "${f.givenNames}" vs passport "${mrz.given}"`);
+      if (f.surname && f.surname.trim().toUpperCase() !== mrz.surname) bad.push(`surname "${f.surname}" vs passport "${mrz.surname}"`);
       return bad.length ? err(`Consulates compare the form against the passport's machine-readable zone. Mismatch: ${bad.join('; ')}. Use the passport spelling and put other spellings under 2.3 "Other names used".`) : null;
     }
   },
@@ -201,9 +237,8 @@ export const RULES = [
   {
     id: 'R3', title: 'Accommodation must cover the whole stay',
     check: (f, s) => {
-      const hotel = s.documents.find((d) => d.id === 'hotel');
-      if (!hotel?.attached || !f.departureDate) return null;
-      const checkout = '2026-10-18';
+      const checkout = checkoutDateFrom(s.documents.filter((d) => d.attached));
+      if (!checkout || !f.departureDate) return null;
       // a second place to stay: a new line, a semicolon, or simply two street addresses
       const addr = f.usAddress || '';
       const parts = addr.split(/\n|;/).map((x) => x.trim()).filter(Boolean).length;
@@ -251,8 +286,10 @@ const listeners = new Set();
 const state = {
   screen: 'category',
   fields: Object.fromEntries(Object.keys(FIELDS).map((k) => [k, ''])),
-  documents: DOCUMENTS.map((d) => ({ ...d, attached: false })),
-  proposal: null,
+  documents: SAMPLE_DOCUMENTS.map((d) => ({ ...d, attached: false })),
+  sampleLoaded: true,
+  recent: {},        // field -> { source, at } for fields the agent wrote
+  lastBatch: null,   // { changes: [{field, from, to, source}], note, at } for undo
   fee: null,          // { paid: true, amount, reference, at }
   interview: null,    // slot
   submission: null,   // { reference, at }
@@ -281,44 +318,81 @@ export function goToScreen(id) {
   notify();
 }
 
-/** Stage changes. Returns { staged, refused } — humanOnly fields are refused. */
-export function proposeChanges(updates, { note, sources = {} } = {}) {
+/**
+ * Apply changes from the agent straight into the form. Reversible, so it does
+ * not wait for approval: every changed field is highlighted with its source and
+ * the whole batch can be undone. Human-only fields are refused.
+ */
+export function applyChanges(updates, { note, sources = {} } = {}) {
   if (state.submission) {
     throw new Error(`The application was filed as ${state.submission.reference} and can no longer be edited.`);
   }
-  const staged = [], refused = [];
+  const applied = [], refused = [];
+  const at = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   for (const [field, to] of Object.entries(updates)) {
     const spec = FIELDS[field];
     if (!spec) { refused.push({ field, reason: 'unknown field' }); continue; }
     if (spec.humanOnly) { refused.push({ field, reason: 'must be answered by the applicant personally' }); continue; }
     const from = state.fields[field];
     if (String(from) === String(to)) continue;
-    staged.push({ field, from, to: String(to), source: sources[field] || null });
+    state.fields[field] = String(to);
+    state.recent[field] = { source: sources[field] || null, at };
+    applied.push({ field, from, to: String(to), source: sources[field] || null });
   }
-  state.proposal = staged.length ? { changes: staged, note } : null;
+  if (applied.length) state.lastBatch = { changes: applied, note, at };
   notify();
-  return { staged, refused };
+  return { applied, refused };
 }
 
-export function applyProposal() {
-  if (!state.proposal) return 0;
-  for (const { field, to } of state.proposal.changes) state.fields[field] = to;
-  const n = state.proposal.changes.length;
-  state.proposal = null;
+export function undoLastBatch() {
+  const batch = state.lastBatch;
+  if (!batch) return 0;
+  for (const { field, from } of batch.changes) {
+    state.fields[field] = from;
+    delete state.recent[field];
+  }
+  state.lastBatch = null;
   notify();
-  return n;
+  return batch.changes.length;
 }
 
-export function discardProposal() {
-  const n = state.proposal?.changes.length || 0;
-  state.proposal = null;
+export function clearRecent(field, { silent } = {}) {
+  if (!state.recent[field]) return;
+  delete state.recent[field];
+  if (!silent) notify();
+}
+
+export function addDocument({ kind, text }) {
+  const id = 'doc-' + Math.random().toString(36).slice(2, 8);
+  state.documents.push({ id, kind: kind || 'Document', text: String(text || ''), attached: false, own: true });
+  state.sampleLoaded = false;
   notify();
-  return n;
+  return id;
+}
+
+export function removeDocument(id) {
+  const i = state.documents.findIndex((d) => d.id === id && !d.editable);
+  if (i === -1) return false;
+  state.documents.splice(i, 1);
+  notify();
+  return true;
+}
+
+export function loadSampleDocuments() {
+  state.documents = SAMPLE_DOCUMENTS.map((d) => ({ ...d, attached: false }));
+  state.sampleLoaded = true;
+  notify();
+}
+
+export function clearDocuments() {
+  state.documents = state.documents.filter((d) => d.editable).map((d) => ({ ...d, text: '' }));
+  state.sampleLoaded = false;
+  notify();
 }
 
 export function setDocumentText(id, text) {
-  const doc = state.documents.find((d) => d.id === id);
-  if (!doc?.editable) throw new Error(`Document '${id}' is not editable`);
+  const doc = state.documents.find((d) => d.id === id && d.editable);
+  if (!doc) return;
   doc.text = text;
   notify();
 }

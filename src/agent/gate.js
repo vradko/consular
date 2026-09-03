@@ -32,6 +32,7 @@ function render() {
         .map((d) => `<div><dt>${escapeHtml(d.label)}</dt><dd>${escapeHtml(String(d.value))}</dd></div>`)
         .join('')}</dl>` : ''}
       <p class="gate-consequence">${escapeHtml(consequence)}</p>
+      <p class="gate-why">Asked here, on the page, because WebMCP has no way yet for a site to put this question into your chat. Your agent is waiting for your answer.</p>
       <div class="gate-actions">
         <button type="button" data-gate="reject" class="btn btn-ghost">Not now</button>
         <button type="button" data-gate="approve" class="btn btn-danger"${armed ? '' : ' disabled'}>

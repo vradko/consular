@@ -13,48 +13,62 @@
         <div class="masthead-text">
           <p class="masthead-kicker">Consular · Nonimmigrant Visa Application</p>
           <h1 class="masthead-title">Online Application for a U.S. Nonimmigrant Visa</h1>
-          <p class="masthead-note">Demo modelled on Form DS-160. Not affiliated with any government. Nothing is transmitted.</p>
+          <p class="masthead-note">Demo modelled on Form DS-160. Not affiliated with any government. Nothing leaves your browser.</p>
         </div>
-        <div id="agent-status" class="agent-status" data-state="checking">
-          <span class="dot"></span><span class="label">checking for an agent…</span>
+        <div class="masthead-tools">
+          <div id="agent-status" class="agent-status" data-state="checking">
+            <span class="dot"></span><span class="label">checking for an agent…</span>
+          </div>
+          <button type="button" class="panel-toggle" id="panel-toggle" aria-pressed="true">Hide demo panel</button>
         </div>
       </div>
     </header>
 
-    <div class="sample-strip">
-      <div class="sample-strip-inner">
-        <strong>Sample applicant loaded.</strong> Maria Kovalenko, a conference speaker, with her five documents in
-        <a href="#docs-card">Your documents</a> on the right — nothing to upload. Ask your agent to fill the form from them.
-      </div>
-    </div>
+    <div class="sample-strip" id="sample-strip"></div>
 
-    <main class="layout">
+    <main class="layout" id="layout">
       <section class="form-pane">
         <nav class="parts" id="parts" aria-label="Application parts"></nav>
         <form id="application-form" class="sheet" autocomplete="off"></form>
       </section>
 
-      <aside class="side-pane">
-        <section class="panel panel-proposal" id="proposal-card" hidden>
-          <header class="panel-head"><h2>Your agent proposes</h2><span class="panel-tag">nothing written yet</span></header>
-          <p class="proposal-note" id="proposal-note"></p>
-          <ul class="diff" id="proposal-diff"></ul>
-          <div class="proposal-actions">
-            <button type="button" class="btn btn-ghost" id="discard-proposal">Discard</button>
-            <button type="button" class="btn btn-primary" id="apply-proposal">Accept into the form</button>
+      <aside class="side-pane" id="side-pane">
+        <p class="demo-note">
+          <strong>Demo panel.</strong> Shows what this page tells your agent and what to expect from it. It is not part of the application — hide it to see the form as an applicant would.
+        </p>
+
+        <section class="panel panel-changes" id="changes-card" hidden>
+          <header class="panel-head"><h2>Your agent just wrote</h2><span class="panel-tag" id="changes-when"></span></header>
+          <p class="changes-note" id="changes-note"></p>
+          <ul class="diff" id="changes-diff"></ul>
+          <div class="changes-actions">
+            <span class="muted small">Highlighted on the sheet. Edit any field to overrule it.</span>
+            <button type="button" class="btn btn-ghost" id="undo-batch">Undo this batch</button>
           </div>
         </section>
 
         <section class="panel panel-policy" id="policy-card">
           <header class="panel-head"><h2>Before doing these, your agent will ask you</h2></header>
           <ul class="policy" id="policy-list"></ul>
-          <p class="muted small">Declared to the agent up front through <code>get-action-policy</code>, so it can warn you before starting.</p>
+          <p class="muted small">Everything else changes only the draft and runs without asking. Declared to the agent up front through <code>get-action-policy</code>.</p>
         </section>
 
         <section class="panel panel-docs" id="docs-card">
           <header class="panel-head"><h2>Your documents</h2><span class="panel-tag" id="docs-count"></span></header>
-          <p class="muted small">Five sample documents, already here. Expand one to read exactly what your agent reads. You don't retype any of it.</p>
+          <p class="muted small">Whatever you give it, your agent reads as text. Bring your own, or use the sample applicant.</p>
           <ul class="docs" id="docs-list"></ul>
+          <div class="docs-add">
+            <label class="btn btn-ghost btn-file">Add files<input type="file" id="doc-files" multiple accept=".txt,.md,.pdf,.json,.csv,.eml,text/plain,application/pdf" hidden></label>
+            <button type="button" class="btn btn-ghost" id="doc-paste-toggle">Paste text</button>
+            <button type="button" class="btn btn-ghost" id="docs-sample">Load sample applicant</button>
+            <button type="button" class="btn btn-ghost" id="docs-clear">Remove all</button>
+          </div>
+          <form class="paste-form" id="paste-form" hidden>
+            <input type="text" id="paste-kind" placeholder="What is it? e.g. Employer letter" class="ctl">
+            <textarea id="paste-text" rows="5" placeholder="Paste the document text here" class="ctl"></textarea>
+            <div class="paste-actions"><button type="button" class="btn btn-ghost" id="paste-cancel">Cancel</button><button type="submit" class="btn btn-primary">Add document</button></div>
+          </form>
+          <p class="muted small" id="docs-hint">Text and PDF files are read in the browser. Scans without a text layer can't be read — paste the text instead.</p>
         </section>
 
         <section class="panel panel-activity">

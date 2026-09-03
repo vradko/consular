@@ -1,7 +1,8 @@
 import './style.css';
 import {
   subscribe, getState, FIELDS, SCREENS, VISA_CATEGORIES, MRV_FEE_USD,
-  setField, goToScreen, applyProposal, discardProposal, attachDocument, setDocumentText, logActivity, runRules, missingRequired
+  setField, goToScreen, undoLastBatch, clearRecent, attachDocument, setDocumentText,
+  addDocument, removeDocument, loadSampleDocuments, clearDocuments, logActivity, runRules, missingRequired
 } from './state.js';
 import { registerTools, isWebMcpAvailable, ACTION_POLICY } from './agent/tools.js';
 
@@ -10,8 +11,8 @@ const form = $('application-form');
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 // ── field controls ──────────────────────────────────────────────────
-function control(name, spec, value, proposed) {
-  const id = `f-${name}`, cls = proposed ? ' proposed' : '';
+function control(name, spec, value, recent) {
+  const id = `f-${name}`, cls = recent ? ' recent' : '';
   if (spec.type === 'enum') {
     return `<select id="${id}" data-field="${name}" class="ctl${cls}"><option value="">Select…</option>${spec.options
       .map((o) => `<option value="${esc(o)}"${o === value ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select>`;
@@ -25,16 +26,20 @@ function control(name, spec, value, proposed) {
   return `<input id="${id}" data-field="${name}" type="${type}" value="${esc(value)}" class="ctl${cls}" />`;
 }
 
+function srcChip(recent) {
+  return recent ? `<span class="src-chip" title="Written by your agent">${recent.source ? 'from ' + esc(recent.source) : 'agent'}</span>` : '';
+}
+
 function fieldRow(name, spec, state) {
-  const proposed = (state.proposal?.changes || []).some((c) => c.field === name);
-  return `<div class="row${spec.humanOnly ? ' human-only' : ''}${proposed ? ' has-proposal' : ''}">
+  const recent = state.recent[name];
+  return `<div class="row${spec.humanOnly ? ' human-only' : ''}" data-row="${name}">
     <label class="row-label" for="f-${name}">
       <span class="row-n">${spec.n}</span>
-      <span class="row-text">${esc(spec.label)}${spec.optional ? ' <em>(optional)</em>' : ''}</span>
+      <span class="row-text">${esc(spec.label)}${spec.optional ? ' <em>(optional)</em>' : ''}${srcChip(recent)}</span>
       ${spec.humanOnly ? '<span class="row-flag">answer personally</span>' : ''}
       ${spec.hint ? `<span class="row-hint">${esc(spec.hint)}</span>` : ''}
     </label>
-    <div class="row-ctl">${control(name, spec, state.fields[name], proposed)}</div>
+    <div class="row-ctl">${control(name, spec, state.fields[name], recent)}</div>
   </div>`;
 }
 
@@ -44,11 +49,11 @@ function screenHeader(screen, sub) {
 }
 
 function renderCategory(state, screen) {
-  const chosen = state.fields.visaCategory;
-  const proposed = (state.proposal?.changes || []).find((c) => c.field === 'visaCategory')?.to;
+  const chosen = state.fields.visaCategory, recent = state.recent.visaCategory;
   return `${screenHeader(screen, 'Choose the category that matches the purpose of your trip. Getting this wrong is the most common reason an application is returned. Unsure? Describe your trip to your agent.')}
+    ${recent ? `<p class="muted small">Category chosen by your agent${recent.source ? ` from ${esc(recent.source)}` : ''}. Pick another card to overrule it.</p>` : ''}
     <div class="cats">${VISA_CATEGORIES.map((c) => `
-      <label class="cat${chosen === c.code ? ' chosen' : ''}${proposed === c.code ? ' proposed' : ''}">
+      <label class="cat${chosen === c.code ? ' chosen' : ''}${recent && chosen === c.code ? ' recent' : ''}">
         <input type="radio" name="visaCategory" value="${c.code}" data-field="visaCategory"${chosen === c.code ? ' checked' : ''}>
         <span class="cat-code">${c.code}</span>
         <span class="cat-name">${esc(c.name)}</span>
@@ -60,13 +65,13 @@ function renderCategory(state, screen) {
 }
 
 function renderDocuments(state, screen) {
+  const docs = state.documents.filter((d) => !d.editable);
   return `${screenHeader(screen, 'Attach the documents that support this application. Your agent can read them and attach the right ones.')}
-    <ul class="doc-attach">${state.documents.map((d) => `
+    ${docs.length ? `<ul class="doc-attach">${docs.map((d) => `
       <li class="${d.attached ? 'on' : ''}">
         <label><input type="checkbox" data-doc="${d.id}"${d.attached ? ' checked' : ''}> <strong>${esc(d.kind)}</strong></label>
         <span class="doc-state">${d.attached ? 'attached' : 'not attached'}</span>
-      </li>`).join('')}
-    </ul>`;
+      </li>`).join('')}</ul>` : '<p class="docs-empty">No documents yet. Add them in the Your documents panel, or load the sample applicant.</p>'}`;
 }
 
 function renderReview(state, screen) {
@@ -124,14 +129,16 @@ function renderParts(state) {
   }).join('');
 }
 
-function renderProposal(state) {
-  const p = state.proposal;
-  $('proposal-card').hidden = !p;
-  if (!p) return;
-  $('proposal-note').textContent = p.note || 'Review before these are written into the form.';
-  $('proposal-diff').innerHTML = p.changes.map((c) => `<li>
+// ── side panels ─────────────────────────────────────────────────────
+function renderChanges(state) {
+  const b = state.lastBatch;
+  $('changes-card').hidden = !b;
+  if (!b) return;
+  $('changes-when').textContent = b.at;
+  $('changes-note').textContent = b.note || `${b.changes.length} field(s) written from your documents.`;
+  $('changes-diff').innerHTML = b.changes.map((c) => `<li>
     <span class="d-field">${FIELDS[c.field].n} ${esc(FIELDS[c.field].label)}</span>
-    <span class="d-vals"><s>${c.from ? esc(c.from) : 'empty'}</s> <b>${esc(c.to)}</b></span>
+    <span class="d-vals">${c.from ? `<s>${esc(c.from)}</s> ` : ''}<b>${esc(c.to)}</b></span>
     ${c.source ? `<span class="d-src">from ${esc(c.source)}</span>` : ''}
   </li>`).join('');
 }
@@ -143,14 +150,18 @@ function renderPolicy() {
 
 function renderDocs(state) {
   const attachable = state.documents.filter((d) => !d.editable);
-  $('docs-count').textContent = `${attachable.filter((d) => d.attached).length} of ${attachable.length} attached`;
+  $('docs-count').textContent = attachable.length ? `${attachable.filter((d) => d.attached).length} of ${attachable.length} attached` : 'none yet';
+  $('docs-sample').hidden = state.sampleLoaded;
+  $('docs-clear').hidden = attachable.length === 0;
   if (document.activeElement?.dataset?.notes) return; // don't re-render under the caret
-  $('docs-list').innerHTML = state.documents.map((d, i) => `<li class="doc${d.attached ? ' attached' : ''}${d.editable ? ' editable' : ''}">
+  $('docs-list').innerHTML = (attachable.length ? '' : '<li class="docs-empty">Nothing here yet. Add your own files, paste text, or load the sample applicant.</li>')
+    + state.documents.map((d, i) => `<li class="doc${d.attached ? ' attached' : ''}${d.editable ? ' editable' : ''}${d.own ? ' own' : ''}">
     <details${d.editable || i === 0 ? ' open' : ''}><summary>
-      <span class="doc-kind">${esc(d.kind)}</span>
+      <span class="doc-kind">${esc(d.kind)}${d.own ? '<span class="doc-own-tag">yours</span>' : ''}</span>
       <span class="doc-preview">${esc(d.text.split('\n')[0].slice(0, 48))}${d.text.length > 48 ? '…' : ''}</span>
-      <span class="doc-att">${d.attached ? 'attached' : ''}</span></summary>
-    ${d.editable ? `<textarea data-notes="${d.id}" rows="5">${esc(d.text)}</textarea>` : `<pre>${esc(d.text)}</pre>`}</details>
+      <span class="doc-att">${d.attached ? 'attached' : ''}</span>
+      ${d.editable ? '' : `<button type="button" class="doc-remove" data-remove="${d.id}" title="Remove this document" aria-label="Remove ${esc(d.kind)}">×</button>`}</summary>
+    ${d.editable ? `<textarea data-notes="${d.id}" rows="5" placeholder="Anything no document contains: your phone, email, who pays for the trip, US contact…">${esc(d.text)}</textarea>` : `<pre>${esc(d.text)}</pre>`}</details>
   </li>`).join('');
 }
 
@@ -160,8 +171,32 @@ function renderActivity(state) {
     : '<li class="muted small">Nothing yet.</li>';
 }
 
-subscribe((state) => { renderParts(state); renderForm(state); renderProposal(state); renderDocs(state); renderActivity(state); });
+function renderStrip(state) {
+  const own = state.documents.filter((d) => !d.editable && d.own).length;
+  const panelHidden = $('layout').classList.contains('panel-hidden');
+  const where = panelHidden ? '<a href="#" data-show-panel>show the demo panel</a> to see them' : 'in <a href="#docs-card">Your documents</a>';
+  let text;
+  if (state.sampleLoaded) text = `<strong>Sample applicant loaded.</strong> Maria Kovalenko, a conference speaker, with her five documents ${where} — nothing to upload. Or replace them with your own.`;
+  else if (own) text = `<strong>${own} of your own document${own === 1 ? '' : 's'} loaded</strong> ${where}. Ask your agent to fill in the application from them.`;
+  else text = `<strong>No documents loaded.</strong> Add your own or load the sample applicant ${where}.`;
+  $('sample-strip').innerHTML = text;
+}
+
+subscribe((state) => { renderParts(state); renderForm(state); renderChanges(state); renderDocs(state); renderActivity(state); renderStrip(state); });
 renderPolicy();
+
+// ── demo panel toggle ───────────────────────────────────────────────
+function setPanel(shown) {
+  $('layout').classList.toggle('panel-hidden', !shown);
+  const b = $('panel-toggle');
+  b.textContent = shown ? 'Hide demo panel' : 'Show demo panel';
+  b.setAttribute('aria-pressed', String(shown));
+  try { localStorage.setItem('consular.panel', shown ? '1' : '0'); } catch {}
+  renderStrip(getState());
+}
+$('panel-toggle').onclick = () => setPanel($('layout').classList.contains('panel-hidden'));
+document.addEventListener('click', (e) => { if (e.target.closest('[data-show-panel]')) { e.preventDefault(); setPanel(true); $('docs-card').scrollIntoView({ behavior: 'smooth' }); } });
+try { if (localStorage.getItem('consular.panel') === '0') setPanel(false); } catch {}
 
 // ── events ──────────────────────────────────────────────────────────
 $('parts').addEventListener('click', (e) => { const b = e.target.closest('[data-screen]'); if (b) goToScreen(b.dataset.screen); });
@@ -172,19 +207,81 @@ form.addEventListener('input', (e) => {
     // never re-render the sheet from its own input event — that would detach
     // the control under the user's hand. Native controls already show their
     // state; only the category cards and the parts strip need a nudge.
-    setField(t.dataset.field, t.value, { silent: true });
-    if (t.dataset.field === 'visaCategory') {
-      form.querySelectorAll('.cat').forEach((c) => c.classList.toggle('chosen', c.querySelector('input').value === t.value));
+    const field = t.dataset.field;
+    setField(field, t.value, { silent: true });
+    clearRecent(field, { silent: true });
+    const row = t.closest('[data-row]');
+    row?.querySelector('.src-chip')?.remove();
+    row?.querySelector('.recent')?.classList.remove('recent');
+    if (field === 'visaCategory') {
+      form.querySelectorAll('.cat').forEach((c) => { c.classList.toggle('chosen', c.querySelector('input').value === t.value); c.classList.remove('recent'); });
     }
     renderParts(getState());
   }
   if (t.dataset?.doc) attachDocument(t.dataset.doc, t.checked);
 });
+$('undo-batch').onclick = () => logActivity('discarded', `Undid ${undoLastBatch()} change(s) by the agent`);
+
+// ── documents: own files, pasted text, the sample ──────────────────
 $('docs-list').addEventListener('input', (e) => { if (e.target.dataset?.notes) setDocumentText(e.target.dataset.notes, e.target.value); });
-$('apply-proposal').onclick = () => logActivity('applied', `Accepted ${applyProposal()} change(s) into the form`);
-$('discard-proposal').onclick = () => logActivity('discarded', `Discarded ${discardProposal()} suggestion(s)`);
+$('docs-list').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-remove]');
+  if (!b) return;
+  e.preventDefault();
+  const doc = getState().documents.find((d) => d.id === b.dataset.remove);
+  if (removeDocument(b.dataset.remove)) logActivity('discarded', `Removed ${doc?.kind || 'a document'}`);
+});
+$('docs-sample').onclick = () => { loadSampleDocuments(); logActivity('ready', 'Loaded the sample applicant (Maria Kovalenko, five documents)'); };
+$('docs-clear').onclick = () => { clearDocuments(); logActivity('discarded', 'Removed all documents'); };
+$('doc-paste-toggle').onclick = () => { const f = $('paste-form'); f.hidden = !f.hidden; if (!f.hidden) $('paste-kind').focus(); };
+$('paste-cancel').onclick = () => { $('paste-form').hidden = true; };
+$('paste-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const text = $('paste-text').value.trim();
+  if (!text) return;
+  const kind = $('paste-kind').value.trim() || text.split('\n')[0].slice(0, 40);
+  addDocument({ kind, text });
+  logActivity('ready', `Added "${kind}" from pasted text`);
+  $('paste-kind').value = ''; $('paste-text').value = ''; $('paste-form').hidden = true;
+});
+
+async function readFile(file) {
+  if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
+    const pdfjs = await import('pdfjs-dist');
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const content = await (await pdf.getPage(i)).getTextContent();
+      text += content.items.map((it) => it.str + (it.hasEOL ? '\n' : ' ')).join('') + '\n';
+    }
+    return text.replace(/[ \t]+\n/g, '\n').trim();
+  }
+  return (await file.text()).trim();
+}
+
+async function addFiles(files) {
+  for (const file of files) {
+    const kind = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+    try {
+      const text = await readFile(file);
+      if (!text) { logActivity('blocked', `"${file.name}" has no readable text — a scan? Paste the text instead.`); continue; }
+      addDocument({ kind, text });
+      logActivity('ready', `Added "${kind}" (${Math.round(text.length / 100) / 10}k characters)`);
+    } catch (error) {
+      logActivity('blocked', `Couldn't read "${file.name}": ${error.message}`);
+    }
+  }
+}
+$('doc-files').addEventListener('change', (e) => { addFiles([...e.target.files]); e.target.value = ''; });
+const dropZone = $('docs-card');
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drop-hover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drop-hover'));
+dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.classList.remove('drop-hover'); addFiles([...e.dataTransfer.files]); });
 
 // ── agent ───────────────────────────────────────────────────────────
+window.__consularState = getState;
+window.__consularValidate = runRules;
 (async () => {
   const el = $('agent-status'), label = el.querySelector('.label');
   if (!isWebMcpAvailable()) {

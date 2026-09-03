@@ -9,7 +9,6 @@
  *
  * --gate approve|reject   auto-press that button when the approval dialog opens
  *                         (stands in for the human; default: leave it pending)
- * --accept                auto-accept staged proposals (stands in for the human)
  * --notes "<text>"        paste text into the notes box before starting
  */
 const http = require('http');
@@ -78,14 +77,6 @@ function parseJson(text) {
       document.querySelectorAll('input[type=radio][value="${SECURITY === 'no' ? 'No' : 'Yes'}"]').forEach(r => { if (r.dataset.field?.startsWith('sec')) { r.click(); n++; } });
       return 'answered ' + n; })()`).then((r) => console.log('  human:', r));
   }
-  if (ACCEPT) {
-    await evaluate(ws, `(() => {
-      if (window.__acceptAuto) clearInterval(window.__acceptAuto);
-      window.__acceptAuto = setInterval(() => {
-        const card = document.getElementById('proposal-card');
-        if (card && !card.hidden) { document.getElementById('apply-proposal').click(); window.__acceptFired = (window.__acceptFired||0)+1; }
-      }, 400); return 'armed'; })()`);
-  }
   if (GATE) {
     // stand-in for the human: press the chosen button once the dialog is armed
     await evaluate(ws, `(() => {
@@ -147,9 +138,8 @@ function parseJson(text) {
     prompt = `Tool result for ${name}:\n${result}`;
   }
 
-  const state = await evaluate(ws, `JSON.stringify({ gateFired: window.__gateFired || 0, accepted: window.__acceptFired || 0, proposalOpen: !document.getElementById('proposal-card').hidden })`);
+  const state = await evaluate(ws, `JSON.stringify({ gateFired: window.__gateFired || 0, recentFields: Object.keys(window.__consularState ? window.__consularState().recent : {}).length })`);
   console.log('  page state:', state);
   if (GATE) await evaluate(ws, `clearInterval(window.__gateAuto); 'cleared'`);
-  if (ACCEPT) await evaluate(ws, `clearInterval(window.__acceptAuto); 'cleared'`);
   process.exit(0);
 })().catch((e) => { console.error('harness error:', e.message); process.exit(1); });

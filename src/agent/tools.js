@@ -1,6 +1,6 @@
 import {
   getState, FIELDS, SCREENS, VISA_CATEGORIES, SLOTS, MRV_FEE_USD,
-  goToScreen, proposeChanges, attachDocument, setFee, setInterview, setSubmission,
+  goToScreen, applyChanges, undoLastBatch, attachDocument, setFee, setInterview, setSubmission,
   missingRequired, runRules, blockingProblems, logActivity
 } from '../state.js';
 import { requestApproval } from './gate.js';
@@ -40,12 +40,15 @@ export const ACTION_POLICY = {
     { tool: 'submit-application', why: 'Files the application with the consulate. It cannot be edited or withdrawn afterwards.' }
   ],
   howApprovalWorks:
-    'The page opens a dialog showing exactly what will happen. The tool call stays pending until the applicant approves or declines — the agent cannot skip or answer this dialog, even if the user asks it to.',
+    'The page opens a dialog in the browser showing exactly what will happen. The tool call stays pending until the applicant approves or declines there — the agent cannot skip or answer this dialog, even if the user asks it to. WebMCP has no channel yet for a page to ask the user through the chat itself (spec issue #165), so the dialog appears on the page; tell the user to look there.',
+  reversible: {
+    tools: ['fill-fields', 'attach-document', 'go-to-screen', 'undo-last-changes'],
+    why: 'These change only the draft. They run immediately; the applicant sees every field you touched highlighted with its source and can undo your last batch with one click. Do not ask for permission before using them.'
+  },
   humanOnly: {
     fields: Object.entries(FIELDS).filter(([, sp]) => sp.humanOnly).map(([n, sp]) => `${sp.n} ${sp.label}`),
     why: 'Security and background questions are legal declarations. The agent may explain them but must not answer on the applicant\'s behalf.'
   },
-  reversible: ['propose-changes (staged until the applicant accepts)', 'attach-document', 'go-to-screen'],
   readOnly: ['get-action-policy', 'get-visa-categories', 'get-application', 'read-documents', 'validate-application', 'list-interview-slots']
 };
 
@@ -53,7 +56,7 @@ const TOOLS = [
   {
     name: 'get-action-policy',
     description:
-      'Call this first. Tells you which actions on this page are consequential and will pause for the applicant\'s approval, which fields only the applicant may answer, and which actions are safe to take freely. Lets you warn the applicant before starting anything that will ask them to confirm.',
+      'Call this first. Tells you which actions are consequential and will pause for the applicant\'s approval in a dialog on the page, which ones just change the draft and run immediately, and which fields only the applicant may answer. Lets you warn the applicant before starting anything that will ask them to confirm.',
     inputSchema: { type: 'object', properties: {} },
     execute: () => text(ACTION_POLICY)
   },
@@ -79,25 +82,25 @@ const TOOLS = [
         interview: s.interview,
         submission: s.submission,
         missingRequired: missingRequired().map((m) => `${m.n} ${m.label}`),
-        pendingProposal: s.proposal ? s.proposal.changes.length : 0
+        fieldsYouWroteRecently: Object.keys(s.recent).length
       });
     }
   },
   {
     name: 'read-documents',
     description:
-      'Returns the applicant\'s documents as text: passport biographic page, employer letter, conference invitation, flight itinerary, hotel confirmation, and their own notes for things no document contains. Read ALL of them before filling the form — details are spread across them and they do not always agree with each other. Note which document each value came from.',
+      'Returns the applicant\'s documents as text — whatever they uploaded or pasted (a passport page, letters, bookings, itineraries) plus their own notes for things no document contains. Read ALL of them before filling the form: details are spread across them and they do not always agree with each other. Note which document each value came from.',
     inputSchema: { type: 'object', properties: {} },
     execute: () => text({ documents: getState().documents.map((d) => ({ id: d.id, kind: d.kind, attached: d.attached, text: d.text })) })
   },
   {
-    name: 'propose-changes',
+    name: 'fill-fields',
     description:
-      'Stages values for one or more fields WITHOUT writing them. The applicant sees a before/after list with your sources and accepts or discards it. Pass everything you extracted at once. Use passport spelling for names. Fields marked humanOnly are refused. Dates as YYYY-MM-DD; enum fields must use one of their options.',
+      'Writes values into the application right away — no approval needed, this only changes the draft. Every field you set is highlighted for the applicant with the source you give, and they can undo your whole batch with one click, so pass everything you extracted at once. Use passport spelling for names. Fields marked humanOnly are refused. Dates as YYYY-MM-DD; enum fields must use one of their options.',
     inputSchema: {
       type: 'object',
       properties: {
-        changes: { type: 'object', description: 'Field name → new value, e.g. {"surname":"KOVALENKO","visaCategory":"B-1"}' },
+        changes: { type: 'object', description: 'Field name → value, e.g. {"surname":"KOVALENKO","visaCategory":"B-1"}' },
         sources: { type: 'object', description: 'Field name → where you read it, e.g. {"surname":"passport","employer":"employer letter"}' },
         note: { type: 'string', description: 'One or two lines for the applicant: what you did and anything you inferred or found inconsistent' }
       },
@@ -106,16 +109,26 @@ const TOOLS = [
     execute: (raw) => {
       const { changes, sources, note } = readArgs(raw);
       if (!changes || typeof changes !== 'object') return text('No changes supplied.');
-      let staged, refused;
-      try { ({ staged, refused } = proposeChanges(changes, { note, sources: sources || {} })); }
+      let applied, refused;
+      try { ({ applied, refused } = applyChanges(changes, { note, sources: sources || {} })); }
       catch (error) { return text({ refused: true, reason: error.message }); }
-      if (staged.length) logActivity('agent', `Proposed ${staged.length} change(s)`);
+      if (applied.length) logActivity('agent', `Filled ${applied.length} field(s)`);
       return text({
-        staged: staged.length,
-        awaiting: staged.length ? 'The applicant must accept these on the page before they are written into the form.' : 'Nothing new to stage.',
-        changes: staged.map((c) => ({ field: `${FIELDS[c.field].n} ${FIELDS[c.field].label}`, from: c.from || '(empty)', to: c.to, source: c.source })),
+        applied: applied.length,
+        note: applied.length ? 'Written into the form. The applicant sees these highlighted and can undo them.' : 'Nothing new to write.',
+        changes: applied.map((c) => ({ field: `${FIELDS[c.field].n} ${FIELDS[c.field].label}`, from: c.from || '(empty)', to: c.to, source: c.source })),
         refused
       });
+    }
+  },
+  {
+    name: 'undo-last-changes',
+    description: 'Reverts the last batch of fields you wrote with fill-fields. Use it when the applicant says you got something wrong.',
+    inputSchema: { type: 'object', properties: {} },
+    execute: () => {
+      const n = undoLastBatch();
+      logActivity('agent', n ? `Undid ${n} field(s)` : 'Nothing to undo');
+      return text(n ? `Reverted ${n} field(s) to their previous values.` : 'There is nothing to undo.');
     }
   },
   {
@@ -123,13 +136,14 @@ const TOOLS = [
     description: 'Marks one of the applicant\'s documents as attached to the application (reversible). Attach every document you took values from — the itinerary and hotel confirmation evidence the travel dates and address, so attach them too. Notes are not a document and cannot be attached.',
     inputSchema: {
       type: 'object',
-      properties: { documentId: { type: 'string', enum: getState().documents.filter((d) => !d.editable).map((d) => d.id) }, attached: { type: 'boolean' } },
+      properties: { documentId: { type: 'string', description: 'A document id from read-documents' }, attached: { type: 'boolean' } },
       required: ['documentId']
     },
     execute: (raw) => {
       const { documentId, attached = true } = readArgs(raw);
       if (documentId === 'notes') return text('Notes are for reading only; they are not a supporting document.');
-      const doc = attachDocument(documentId, attached);
+      let doc;
+      try { doc = attachDocument(documentId, attached); } catch (error) { return text({ refused: true, reason: error.message }); }
       logActivity('agent', `${attached ? 'Attached' : 'Detached'} ${doc.kind}`);
       return text({ documentId, attached: doc.attached });
     }
